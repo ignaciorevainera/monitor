@@ -488,6 +488,8 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
                           std::vector<int>* itemWidths = nullptr, int* moreWidth = nullptr) {
     Rgb fg = g_light ? Rgb{ 0, 0, 0 } : Rgb{ 255, 255, 255 };
     Rgb red = g_light ? Rgb{ 196, 30, 40 } : Rgb{ 255, 90, 90 };
+    Rgb warnColor = g_light ? Rgb{ 196, 90, 0 } : Rgb{ 255, 135, 40 };
+    Rgb critColor = g_light ? Rgb{ 196, 30, 40 } : Rgb{ 255, 45, 45 };
     Rgb charge = g_light ? Rgb{ 0, 120, 212 } : Rgb{ 96, 205, 255 };
     Rgb full = g_light ? Rgb{ 16, 124, 16 } : Rgb{ 108, 203, 95 };  // Windows "success" green
     HFONT icons = MakeFont(Px(16), FW_NORMAL, L"Segoe Fluent Icons", L"Segoe MDL2 Assets");
@@ -519,7 +521,7 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
         if (skip && (*skip)[i]) continue;
         const auto& it = g_items[i];
         int a = it.dim ? 120 : 255;
-        Rgb tc = it.low ? red : fg;
+        Rgb tc = it.severity >= 2 ? critColor : it.severity == 1 ? warnColor : it.low ? red : fg;
         bool mark = it.charging || it.full;  // bolt while charging, green check mark once full
         size_t glyph = out.size();
         slots.push_back({ (int)glyph, (int)glyph + 1, mark ? (int)glyph + 2 : -1, (int)i });
@@ -660,7 +662,7 @@ bool SameItems(const std::vector<WidgetItem>& a, const std::vector<WidgetItem>& 
             x.charging != y.charging || x.full != y.full || x.dim != y.dim ||
             x.low != y.low || x.bluetooth != y.bluetooth || x.label != y.label ||
             x.accent != y.accent || x.metric != y.metric || x.glyphOverride != y.glyphOverride ||
-            x.name != y.name)
+            x.name != y.name || x.severity != y.severity)
             return false;
     }
     return true;

@@ -90,11 +90,14 @@ struct MetricSpec {
     const wchar_t* name;
     const wchar_t* label;
 };
-constexpr MetricSpec kE1Metrics[] = {
-    { metrics::Id::CpuUsage, 0xEEA1, L"CPU usage", nullptr },
-    { metrics::Id::RamUsage, 0xEEA0, L"RAM usage", nullptr },
-    { metrics::Id::GpuUsage, 0xE950, L"GPU usage", nullptr },
-    { metrics::Id::Vram,     0xEEA0, L"VRAM",      L"V" },
+constexpr MetricSpec kMetrics[] = {
+    { metrics::Id::CpuUsage, 0xEEA1, L"CPU usage",       nullptr },
+    { metrics::Id::CpuTemp,  0xE957, L"CPU temperature", nullptr },
+    { metrics::Id::RamUsage, 0xEEA0, L"RAM usage",       nullptr },
+    { metrics::Id::GpuUsage, 0xE950, L"GPU usage",       nullptr },
+    { metrics::Id::GpuTemp,  0xE957, L"GPU temperature", nullptr },
+    { metrics::Id::Vram,     0xEEA0, L"VRAM",            L"V" },
+    { metrics::Id::SsdTemp,  0xEDA2, L"SSD temperature", nullptr },
 };
 UINT g_taskbarCreatedMsg;
 bool g_lightTaskbar;
@@ -607,7 +610,7 @@ void ApplyEntry(TrayEntry& e) {
 }
 
 const MetricSpec* FindMetricSpec(int id) {
-    for (const auto& m : kE1Metrics) {
+    for (const auto& m : kMetrics) {
         if (static_cast<int>(m.id) == id) return &m;
     }
     return nullptr;
@@ -627,6 +630,9 @@ void ApplyMetricTray(int id) {
         return;
     }
     bool ok = g_hasMetricSnap && g_metricSnap.ok[id];
+    bool isTemp = id == static_cast<int>(metrics::Id::CpuTemp) ||
+                  id == static_cast<int>(metrics::Id::GpuTemp) ||
+                  id == static_cast<int>(metrics::Id::SsdTemp);
     int pct = ok ? std::clamp(static_cast<int>(g_metricSnap.val[id] + 0.5), 0, 100) : -1;
     std::wstring sig = std::to_wstring(pct) + (ok ? L"1" : L"0") + (g_lightTaskbar ? L"l" : L"k");
     if (sig != e.iconSig || !e.icon) {
@@ -636,13 +642,15 @@ void ApplyMetricTray(int id) {
         e.icon = RenderIcon(shortVal, pct, fg, fg, !ok);
         e.iconSig = sig;
     }
-    std::wstring tip = std::wstring(T(spec->name)) + L": " + metrics::FormatPercent(g_metricSnap.val[id], ok);
+    std::wstring tip = std::wstring(T(spec->name)) + L": " +
+                       (isTemp ? metrics::FormatTemp(g_metricSnap.val[id], ok)
+                               : metrics::FormatPercent(g_metricSnap.val[id], ok));
     TrayCall(e.added ? NIM_MODIFY : NIM_ADD, uid, e.icon, tip);
     e.added = true;
 }
 
 void ApplyAllMetricTray() {
-    for (const auto& m : kE1Metrics) ApplyMetricTray(static_cast<int>(m.id));
+    for (const auto& m : kMetrics) ApplyMetricTray(static_cast<int>(m.id));
 }
 
 int KindOrder(DeviceKind k) {  // default order: headset first, then mouse, ...
@@ -688,21 +696,27 @@ void UpdateWidget() {
     std::vector<std::wstring> labels = ShortLabels(labelIn, 3);
     std::vector<WidgetItem> items;
     std::wstring tip;
-    for (const auto& m : kE1Metrics) {
+    for (const auto& m : kMetrics) {
         int idx = static_cast<int>(m.id);
         if (g_metricCfg.where[idx] != metrics::Where::Bar) continue;
         bool ok = g_hasMetricSnap && g_metricSnap.ok[idx];
-        std::wstring valText = metrics::FormatPercent(g_metricSnap.val[idx], ok);
+        bool isTemp = m.id == metrics::Id::CpuTemp || m.id == metrics::Id::GpuTemp || m.id == metrics::Id::SsdTemp;
+        std::wstring valText = isTemp ? metrics::FormatTemp(g_metricSnap.val[idx], ok)
+                                      : metrics::FormatPercent(g_metricSnap.val[idx], ok);
         WidgetItem it;
         it.metric = idx;
         it.glyphOverride = m.glyph;
         it.name = T(m.name);
         it.text = valText;
         it.dim = !ok;
+        it.severity = (isTemp && ok) ? metrics::SeverityFor(idx, g_metricSnap.val[idx]) : 0;
         if (m.label) it.label = m.label;
         items.push_back(it);
         if (!tip.empty()) tip += L"\n";
         tip += std::wstring(T(m.name)) + L": " + valText;
+        if (m.id == metrics::Id::CpuTemp) {
+            tip += std::wstring(L" (") + T(L"Thermal zone reading, not a CPU die sensor") + L")";
+        }
     }
     for (size_t i = 0; i < list.size(); i++) {
         auto* e = list[i];
@@ -822,7 +836,7 @@ void SetShowDisconnectedDevices(bool on) {
 void ReAddAll() {
     g_placeholder = false;
     for (auto& [k, e] : g_entries) { e.added = false; ApplyEntry(e); }
-    for (const auto& m : kE1Metrics) {
+    for (const auto& m : kMetrics) {
         int id = static_cast<int>(m.id);
         g_metricTray[id].added = false;
         ApplyMetricTray(id);
@@ -845,7 +859,7 @@ void RedrawAll() {
         if (g_placeholder) { TrayDelete(PLACEHOLDER_ID); g_placeholder = false; }
     }
     for (auto& [k, e] : g_entries) { e.iconSig.clear(); ApplyEntry(e); }
-    for (const auto& m : kE1Metrics) {
+    for (const auto& m : kMetrics) {
         int id = static_cast<int>(m.id);
         g_metricTray[id].iconSig.clear();
         ApplyMetricTray(id);
@@ -1016,7 +1030,7 @@ void ShowMenu() {
     AppendMenuW(m, MF_STRING | (g_brandColors ? MF_CHECKED : 0), ID_BRAND_COLORS, T(L"Brand colors (Razer green, Logitech blue, ...)"));
     {
         HMENU mm = CreatePopupMenu();
-        for (const auto& ms : kE1Metrics) {
+        for (const auto& ms : kMetrics) {
             int id = static_cast<int>(ms.id);
             HMENU loc = CreatePopupMenu();
             UINT base = ID_METRIC_WHERE_FIRST + static_cast<UINT>(id) * 4;
@@ -1313,7 +1327,7 @@ LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
                 if (e.added) TrayDelete(e.uid);
                 if (e.icon) DestroyIcon(e.icon);
             }
-            for (const auto& m : kE1Metrics) {
+            for (const auto& m : kMetrics) {
                 int id = static_cast<int>(m.id);
                 if (g_metricTray[id].added) TrayDelete(metrics::kTrayUidBase + static_cast<UINT>(id));
                 if (g_metricTray[id].icon) DestroyIcon(g_metricTray[id].icon);

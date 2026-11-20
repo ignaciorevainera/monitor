@@ -22,6 +22,7 @@ struct WidgetItem {
     int metric     = -1;     // >= 0: system metric id
     wchar_t glyphOverride = 0;  // explicit Segoe Fluent glyph when non-zero
     std::wstring name;       // human-readable name for overflow tooltip
+    int severity   = 0;
 };
 
 namespace widget {
