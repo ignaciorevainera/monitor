@@ -11,7 +11,7 @@ namespace {
 
 HWND g_wnd, g_taskbar, g_tip, g_notify, g_rebar;
 UINT g_clickMsg;
-bool g_light, g_hover;
+bool g_light;
 bool g_background;  // opaque rounded plate behind the text, for transparent / restyled taskbars
 bool g_stacked;     // icon above the percentage (menu option, PR #525)
 bool g_vertical;    // the primary taskbar is docked left or right: one block per device, stacked (PR #321)
@@ -27,7 +27,6 @@ HINSTANCE g_inst;
 // left of its taskbar's clock. The primary strip above is unchanged, and with one monitor none exist.
 struct Mirror {
     HWND bar = nullptr, wnd = nullptr;
-    bool hover = false;
     SIZE size{};
     int dpi = 0;
     int lastLeft = INT_MIN;  // client x it was last placed at; INT_MIN = not placed (hidden)
@@ -509,7 +508,7 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height) {
 }
 
 // Draws the strip for one window: the primary one or a mirror on a secondary taskbar.
-void PaintStrip(HWND wnd, HWND taskbar, bool hover, SIZE& size) {
+void PaintStrip(HWND wnd, HWND taskbar, SIZE& size) {
     RECT bar;
     GetClientRect(taskbar, &bar);
     int W = 0, H = 0;
@@ -517,8 +516,7 @@ void PaintStrip(HWND wnd, HWND taskbar, bool hover, SIZE& size) {
     if (W <= 0 || H <= 0) return;
     Canvas cv(W, H);
 
-    // Nearly transparent background so the whole strip receives mouse input,
-    // plus a rounded hover highlight like the system tray icons have.
+    // Nearly transparent background so the whole strip receives mouse input.
     for (auto& p : cv.px) p = 0x01000000;
     auto roundRect = [&](int inset, int r, Rgb c, int a) {
         for (int y = inset; y < H - inset; y++)
@@ -532,7 +530,6 @@ void PaintStrip(HWND wnd, HWND taskbar, bool hover, SIZE& size) {
     // (e.g. Windhawk's Taskbar Styler) makes the bar transparent over the wallpaper.
     Rgb barColor = g_light ? Rgb{ 243, 243, 243 } : Rgb{ 32, 32, 32 };
     if (g_background) roundRect(Px(4), Px(6), barColor, 240);
-    if (hover) roundRect(Px(4), Px(4), g_light ? Rgb{ 0, 0, 0 } : Rgb{ 255, 255, 255 }, g_light ? 20 : 26);
 
     int x = Px(8);
     Rgb track = g_light ? Rgb{ 0, 0, 0 } : Rgb{ 255, 255, 255 };
@@ -587,14 +584,14 @@ void PaintStrip(HWND wnd, HWND taskbar, bool hover, SIZE& size) {
 
 void Paint() {
     if (!g_wnd) return;
-    PaintStrip(g_wnd, g_taskbar, g_hover, g_size);
+    PaintStrip(g_wnd, g_taskbar, g_size);
     g_lastW = -1;  // force a re-position with the new size
 }
 
 void PaintMirror(Mirror& m) {
     g_dpiBar = m.bar;
     m.dpi = Dpi();
-    PaintStrip(m.wnd, m.bar, m.hover, m.size);
+    PaintStrip(m.wnd, m.bar, m.size);
     g_dpiBar = nullptr;
     m.lastLeft = INT_MIN;  // force a re-position with the new size
 }
@@ -792,34 +789,8 @@ void PaintAll() {
     for (auto& m : g_mirrors) PaintMirror(m);
 }
 
-// Hover highlight for the strip under the mouse: the primary one or a mirror.
-void SetHover(HWND h, bool on) {
-    if (h == g_wnd) {
-        if (g_hover == on) return;
-        g_hover = on;
-        Paint();
-        widget::Reposition();
-        return;
-    }
-    for (auto& m : g_mirrors)
-        if (m.wnd == h && m.hover != on) {
-            m.hover = on;
-            PaintMirror(m);
-            PositionMirror(m);
-        }
-}
-
 LRESULT CALLBACK WidgetProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
-        case WM_MOUSEMOVE: {
-            TRACKMOUSEEVENT t{ sizeof(t), TME_LEAVE, h, 0 };
-            TrackMouseEvent(&t);
-            SetHover(h, true);
-            return 0;
-        }
-        case WM_MOUSELEAVE:
-            SetHover(h, false);
-            return 0;
         case WM_LBUTTONUP:
         case WM_RBUTTONUP:
             PostMessageW(g_notify, g_clickMsg, 0, 0);
@@ -903,7 +874,6 @@ void Destroy() {
     if (g_tip) { DestroyWindow(g_tip); g_tip = nullptr; }
     if (g_wnd) { DestroyWindow(g_wnd); g_wnd = nullptr; }
     g_taskbar = nullptr;
-    g_hover = false;
 }
 
 bool Alive() { return g_wnd && IsWindow(g_wnd) && g_taskbar && IsWindow(g_taskbar); }
