@@ -488,8 +488,10 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
                           std::vector<int>* itemWidths = nullptr, int* moreWidth = nullptr) {
     Rgb fg = g_light ? Rgb{ 0, 0, 0 } : Rgb{ 255, 255, 255 };
     Rgb red = g_light ? Rgb{ 196, 30, 40 } : Rgb{ 255, 90, 90 };
-    Rgb warnColor = g_light ? Rgb{ 196, 90, 0 } : Rgb{ 255, 135, 40 };
-    Rgb critColor = g_light ? Rgb{ 196, 30, 40 } : Rgb{ 255, 45, 45 };
+    auto sc1 = widget::SeverityColor(1, g_light);
+    auto sc2 = widget::SeverityColor(2, g_light);
+    Rgb warnColor{ sc1.r, sc1.g, sc1.b };
+    Rgb critColor{ sc2.r, sc2.g, sc2.b };
     Rgb charge = g_light ? Rgb{ 0, 120, 212 } : Rgb{ 96, 205, 255 };
     Rgb full = g_light ? Rgb{ 16, 124, 16 } : Rgb{ 108, 203, 95 };  // Windows "success" green
     HFONT icons = MakeFont(Px(16), FW_NORMAL, L"Segoe Fluent Icons", L"Segoe MDL2 Assets");

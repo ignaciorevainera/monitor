@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <atomic>
 #include <climits>
+#include <cmath>
 #include <cstdio>
 #include <cwchar>
 #include <map>
@@ -633,18 +634,30 @@ void ApplyMetricTray(int id) {
     bool isTemp = id == static_cast<int>(metrics::Id::CpuTemp) ||
                   id == static_cast<int>(metrics::Id::GpuTemp) ||
                   id == static_cast<int>(metrics::Id::SsdTemp);
-    int pct = ok ? std::clamp(static_cast<int>(g_metricSnap.val[id] + 0.5), 0, 100) : -1;
-    std::wstring sig = std::to_wstring(pct) + (ok ? L"1" : L"0") + (g_lightTaskbar ? L"l" : L"k");
+    int sev = (isTemp && ok) ? metrics::SeverityFor(id, g_metricSnap.val[id]) : 0;
+    int val = ok ? (isTemp ? static_cast<int>(std::lround(g_metricSnap.val[id]))
+                           : std::clamp(static_cast<int>(g_metricSnap.val[id] + 0.5), 0, 100))
+                 : -1;
+    std::wstring sig = std::to_wstring(val) + (ok ? L"1" : L"0") + std::to_wstring(sev) + (g_lightTaskbar ? L"l" : L"k");
     if (sig != e.iconSig || !e.icon) {
         if (e.icon) DestroyIcon(e.icon);
-        std::wstring shortVal = ok ? std::to_wstring(pct) : L"--";
+        std::wstring shortVal = ok ? std::to_wstring(val) : L"--";
         Rgb fg = Foreground();
-        e.icon = RenderIcon(shortVal, pct, fg, fg, !ok);
+        Rgb tc = fg;
+        if (ok && sev > 0) {
+            auto sc = widget::SeverityColor(sev, g_lightTaskbar);
+            tc = { sc.r, sc.g, sc.b };
+        }
+        int barPct = ok ? std::clamp(val, 0, 100) : -1;
+        e.icon = RenderIcon(shortVal, barPct, tc, tc, !ok);
         e.iconSig = sig;
     }
     std::wstring tip = std::wstring(T(spec->name)) + L": " +
                        (isTemp ? metrics::FormatTemp(g_metricSnap.val[id], ok)
                                : metrics::FormatPercent(g_metricSnap.val[id], ok));
+    if (id == static_cast<int>(metrics::Id::CpuTemp)) {
+        tip += std::wstring(L" (") + T(L"Thermal zone reading, not a CPU die sensor") + L")";
+    }
     TrayCall(e.added ? NIM_MODIFY : NIM_ADD, uid, e.icon, tip);
     e.added = true;
 }

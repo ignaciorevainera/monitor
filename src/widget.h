@@ -26,6 +26,14 @@ struct WidgetItem {
 };
 
 namespace widget {
+struct SeverityRgb {
+    BYTE r, g, b;
+};
+inline constexpr SeverityRgb SeverityColor(int severity, bool light) {
+    if (severity >= 2) return light ? SeverityRgb{ 196, 30, 40 } : SeverityRgb{ 255, 45, 45 };
+    if (severity == 1) return light ? SeverityRgb{ 196, 90, 0 } : SeverityRgb{ 255, 135, 40 };
+    return light ? SeverityRgb{ 0, 0, 0 } : SeverityRgb{ 255, 255, 255 };
+}
 // Creates the widget on the primary taskbar. Clicks are reported by posting `clickMsg` to `notifyWnd`.
 bool Create(HINSTANCE inst, HWND notifyWnd, UINT clickMsg, bool lightTheme);
 void Destroy();
