@@ -489,9 +489,11 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
 
     int itemGap = compact ? Px(6) : Px(14);
     std::vector<Piece> out;
-    struct Slot { int icon, label, bolt; };  // indices of one device's pieces
+    struct Slot { int icon, label, bolt, itemIdx; };  // indices of one device's pieces (-1 for more slot)
     std::vector<Slot> slots;
     if (showMore) {
+        size_t mg = out.size();
+        slots.push_back({ (int)mg, -1, -1, -1 });
         Piece more{ RenderMask(std::wstring(1, kMore), icons, g_light), fg, 220, itemGap };
         if (moreWidth) *moreWidth = more.m.w + itemGap;
         out.push_back(std::move(more));
@@ -512,7 +514,7 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
         Rgb tc = it.low ? red : fg;
         bool mark = it.charging || it.full;  // bolt while charging, green check mark once full
         size_t glyph = out.size();
-        slots.push_back({ (int)glyph, (int)glyph + 1, mark ? (int)glyph + 2 : -1 });
+        slots.push_back({ (int)glyph, (int)glyph + 1, mark ? (int)glyph + 2 : -1, (int)i });
         bool branded = it.accent != Accent::None;
         BrandColor bc = AccentColor(it.accent, g_light);
         Rgb accent{ bc.r, bc.g, bc.b };
@@ -558,7 +560,7 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
     int iconH = 0, textH = 0;
     for (const Slot& s : slots) {
         iconH = std::max(iconH, out[s.icon].m.h);
-        textH = std::max(textH, out[s.label].m.h);
+        if (s.label >= 0) textH = std::max(textH, out[s.label].m.h);
     }
     bool stacked = !g_vertical && g_stacked && !slots.empty() && barH >= iconH + rowGap + textH + barRoom + Px(6);
     if (g_vertical && !slots.empty()) {
@@ -567,6 +569,12 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
         int y = Px(6);
         for (const Slot& s : slots) {
             Piece& ic = out[s.icon];
+            if (s.label < 0) {
+                ic.px = (barW - ic.m.w) / 2;
+                ic.py = y;
+                y += ic.m.h + itemGap;
+                continue;
+            }
             Piece& lb = out[s.label];
             int boltW = s.bolt >= 0 ? Px(2) + out[s.bolt].m.w : 0;
             ic.px = (barW - ic.m.w) / 2;
@@ -578,7 +586,7 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
                 out[s.bolt].px = lb.px + lb.m.w + Px(2);
                 out[s.bolt].py = y + (lb.m.h - out[s.bolt].m.h) / 2;
             }
-            y += lb.m.h + (lb.barPct >= 0 ? barRoom : 0) + Px(8);
+            y += lb.m.h + (lb.barPct >= 0 ? barRoom : 0) + itemGap;
         }
         height = y;
         return out;
@@ -589,9 +597,16 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
         int x = Px(8);
         for (const Slot& s : slots) {
             Piece& ic = out[s.icon];
+            if (s.label < 0) {
+                ic.px = x;
+                ic.py = (barH - ic.m.h) / 2;
+                x += ic.m.w + itemGap;
+                continue;
+            }
             Piece& lb = out[s.label];
             int boltW = s.bolt >= 0 ? Px(2) + out[s.bolt].m.w : 0;
             int slotW = std::max(ic.m.w + boltW, lb.m.w);
+            if (itemWidths && s.itemIdx >= 0) (*itemWidths)[s.itemIdx] = slotW + itemGap;
             ic.px = x + (slotW - ic.m.w - boltW) / 2;
             ic.py = top + (iconH - ic.m.h) / 2;
             if (s.bolt >= 0) {
@@ -600,9 +615,9 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
             }
             lb.px = x + (slotW - lb.m.w) / 2;
             lb.py = top + iconH + rowGap;
-            x += slotW + Px(10);
+            x += slotW + itemGap;
         }
-        width = x - Px(10) + Px(8);
+        width = x - itemGap + Px(8);
         return out;
     }
     width = Px(8) * 2;
@@ -618,11 +633,11 @@ void PaintStrip(HWND wnd, HWND taskbar, SIZE& size, int maxW = INT_MAX) {
     int W = 0, H = 0;
     auto pieces = Layout(bar.right - bar.left, bar.bottom - bar.top, W, H);
     if (wnd == g_wnd) g_hiddenTip.clear();
-    if (!g_vertical && maxW < INT_MAX && W > maxW && !g_items.empty()) {
+    if (maxW < INT_MAX && W > maxW && !g_items.empty()) {
         std::vector<int> itemWidths;
         int moreW = 0;
         pieces = Layout(bar.right - bar.left, bar.bottom - bar.top, W, H, true, nullptr, false, &itemWidths, &moreW);
-        if (W > maxW) {
+        if (!g_vertical && W > maxW) {
             std::vector<uint8_t> isMetric(g_items.size(), 0);
             int lowIdx = -1;
             for (size_t i = 0; i < g_items.size(); i++) {
