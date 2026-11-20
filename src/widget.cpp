@@ -242,7 +242,8 @@ void ApplyTipTheme() {
     }
 }
 
-wchar_t Glyph(DeviceKind k, bool bluetooth) {
+wchar_t Glyph(DeviceKind k, bool bluetooth, wchar_t glyphOverride = 0) {
+    if (glyphOverride) return glyphOverride;
     switch (k) {
         case DeviceKind::Headset:  return 0xE7F6;  // Headphone
         case DeviceKind::Mouse:    return 0xE962;  // Mouse
@@ -420,7 +421,7 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height) {
         bool branded = it.accent != Accent::None;
         BrandColor bc = AccentColor(it.accent, g_light);
         Rgb accent{ bc.r, bc.g, bc.b };
-        Piece icon{ RenderMask(std::wstring(1, Glyph(it.kind, it.bluetooth)), icons, g_light), branded ? accent : fg, a, Px(5) };
+        Piece icon{ RenderMask(std::wstring(1, Glyph(it.kind, it.bluetooth, it.glyphOverride)), icons, g_light), branded ? accent : fg, a, Px(5) };
         if (branded && !it.dim) {
             icon.haloR = Px(3);
             icon.halo = Halo(icon.m, icon.haloR);

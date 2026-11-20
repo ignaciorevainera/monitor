@@ -71,6 +71,7 @@ HWND g_hwnd;
 HANDLE g_refreshEvt, g_stopEvt, g_worker, g_metricWorker;
 metrics::Config g_metricCfg = metrics::kDefaultConfig;
 metrics::Snapshot g_metricSnap{};
+bool g_hasMetricSnap = false;
 UINT g_taskbarCreatedMsg;
 bool g_lightTaskbar;
 bool g_wantWidget = true;      // user's choice: taskbar widget (default) or tray icons
@@ -587,7 +588,35 @@ void UpdateWidget() {
     std::vector<std::wstring> labels = ShortLabels(labelIn, 3);
     std::vector<WidgetItem> items;
     std::wstring tip;
-    for (auto* e : list) {
+    struct MetricSpec {
+        metrics::Id id;
+        wchar_t glyph;
+        const wchar_t* name;
+        const wchar_t* label;
+    };
+    static constexpr MetricSpec kMetrics[] = {
+        { metrics::Id::CpuUsage, 0xEEA1, L"CPU usage", nullptr },
+        { metrics::Id::RamUsage, 0xEEA0, L"RAM usage", nullptr },
+        { metrics::Id::GpuUsage, 0xE950, L"GPU usage", nullptr },
+        { metrics::Id::Vram,     0xEEA0, L"VRAM",      L"V" },
+    };
+    for (const auto& m : kMetrics) {
+        int idx = static_cast<int>(m.id);
+        if (g_metricCfg.where[idx] != metrics::Where::Bar) continue;
+        bool ok = g_hasMetricSnap && g_metricSnap.ok[idx];
+        std::wstring valText = metrics::FormatPercent(g_metricSnap.val[idx], ok);
+        WidgetItem it;
+        it.metric = idx;
+        it.glyphOverride = m.glyph;
+        it.text = valText;
+        it.dim = !ok;
+        if (m.label) it.label = m.label;
+        items.push_back(it);
+        if (!tip.empty()) tip += L"\n";
+        tip += std::wstring(T(m.name)) + L": " + valText;
+    }
+    for (size_t i = 0; i < list.size(); i++) {
+        auto* e = list[i];
         WidgetItem it;
         it.kind = e->st.kind;
         bool offline = !e->st.connected;
@@ -599,7 +628,7 @@ void UpdateWidget() {
         it.dim = offline || e->st.percent < 0;
         it.low = !offline && !it.charging && it.percent >= 0 && it.percent <= LOW_BATTERY;
         it.bluetooth = e->st.via == L"Bluetooth";
-        it.label = labels[items.size()];
+        it.label = labels[i];
         it.accent = AccentFor(e->st);
         items.push_back(it);
         if (!tip.empty()) tip += L"\n";
@@ -1070,8 +1099,11 @@ LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_METRICS: {
             auto* s = reinterpret_cast<metrics::Snapshot*>(lp);
             if (s) {
+                bool changed = !g_hasMetricSnap || !metrics::SameValues(g_metricSnap, *s);
                 g_metricSnap = *s;
+                g_hasMetricSnap = true;
                 delete s;
+                if (changed) UpdateWidget();
             }
             return 0;
         }

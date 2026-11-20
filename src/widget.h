@@ -19,6 +19,8 @@ struct WidgetItem {
     bool bluetooth = false;  // picks the Bluetooth icon when the device type is unknown
     std::wstring label;      // tiny caption on the icon; set only when two devices of one kind are shown
     Accent accent  = Accent::None;  // brand color for the icon, its glow and the level bar
+    int metric     = -1;     // >= 0: system metric id
+    wchar_t glyphOverride = 0;  // explicit Segoe Fluent glyph when non-zero
 };
 
 namespace widget {
