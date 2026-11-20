@@ -61,6 +61,13 @@ Estado: 19-11-2026. Spec: `docs/monitor-spec.md` (decisiones D1–D15).
 - **El menú usa `TrackPopupMenu` + `switch(cmd)`**, no `WM_COMMAND` — los handlers nuevos de menú siguen ese patrón.
 - Cero REJECT en esta pasada (2/2 approve a la primera); la suite + clean rebuild ~10 min por tarea — seguir esperando con `hc wait` largo.
 
+## Deltas aprendidos en la E2.6 (menú: anclaje, hover, español)
+
+- **`TPM_HORIZONTALREPOSITION`/`TPM_VERTICALREPOSITION` NO son API pública** (verificado contra MS Learn; MinGW correctamente las rechaza). El palanco de anclaje del menú es **solo `TPM_BOTTOMALIGN`** — no repetir el error en planes futuros.
+- **Supresión modal**: patrón `widget::SuspendHover()` + `widget::SetTooltipActive(false)` antes de `TrackPopupMenu`, reactivación incondicional después; el hover queda dormido hasta el próximo `WM_MOUSEMOVE`. Reutilizable para cualquier UI modal futura.
+- **es.txt a cobertura total** (213 claves = template). El script de verificación (diff template↔es + placeholders por línea + UTF-8) sirve para auditar cualquier otro idioma — candidato a E4.
+- Zero REJECT en esta pasada (3/3 approve a la primera).
+
 ## Skeletons
 
 ### Etapa 1 — Métricas nativas sin admin
