@@ -44,6 +44,15 @@ Estado: 19-11-2026. Spec: `docs/monitor-spec.md` (decisiones D1–D15).
 - **Guarda anti-reinicio**: `StartHover` no-op cuando la dirección ya coincide — sin eso, `WM_MOUSEMOVE` continuo reinicia el fade-in y la animación nunca termina.
 - **Tiempos de build**: `make && make test` tarda ~8 min (50+ tests compilados); `build.bat` solo la app es rápido. Planificar los waits del orquestador en consecuencia.
 
+## Deltas aprendidos en la Etapa 2 (para los planes de etapas futuras)
+
+- **Thermal Zone ausente en esta placa** (AMD desktop): `cpu_temp` queda honestamente en `--` (ok=false). Sin admin no hay fuente de die-temp;PawnIO quedó descartado por decisión del usuario. Opciones futuras: nada sin admin — dejar así.
+- **SSD real a ~79-80 °C en esta máquina**: número genuino del sensor NVMe (probablemente bajo la GPU), no un bug — el humano lo valida contra HWiNFO. Ya por encima del umbral warn 65 → el ítem se ve naranja de entrada.
+- **El delta del cache E1.5 aplicado y verificado**: `severity` entró a `WidgetItem` y a `SameItems`; una severidad que cambia con texto congelado repinta (probado por el reviewer con el camino completo).
+- **Segundo REJECT del ciclo de review** (T4): bandeja sin severidad y `shortVal` de temps clampado a 100 — el gate de reviewer fresco se sigue pagando; mantenerlo en E3+.
+- **Iconos de bandeja de métricas son value-only** (estilo de la casa: los dispositivos también dibujan solo número); `widget::SeverityColor` es la fuente única de colores de severidad compartida entre strip y bandeja, y `iconSig` incluye severidad.
+- **Defaults nuevos no pisan config guardada** (`LoadMetricsWhere` gana): en la máquina del usuario las temps se activan desde el menú, no por reset.
+
 ## Skeletons
 
 ### Etapa 1 — Métricas nativas sin admin
