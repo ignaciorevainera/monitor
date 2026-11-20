@@ -36,6 +36,14 @@ Estado: 19-11-2026. Spec: `docs/monitor-spec.md` (decisiones D1–D15).
 - **El strip de TraySense no es scripable** (GDI layered): la comparación válida es contra contadores de Windows (RAM Δ0.1 en la verificación final) + ojo humano.
 - **uIDs de bandeja**: disjuntos de `StableId` por el bit 8 que `StableId` siempre setea (`| 0x100`), no por rango. Tenerlo en cuenta si se agregan más uIDs.
 
+## Deltas aprendidos en la E1.5 (interacción del widget)
+
+- **Clics**: derecho = menú, izquierdo = Administrador de tareas, diferenciados por `wParam` en el `WM_WIDGET_CLICK` existente; los espejos heredan por compartir clase y proc. Entrada del menú conservada.
+- **Hover animado**: 100 ms in / 180 ms out, ease-out cúbico, alfa 20/26, respeta `SPI_GETCLIENTAREAANIMATION`. El `LayoutCache` se llavea por TODOS los campos de `WidgetItem` (13 vía `SameItems`) + tema, DPI, stacked, vertical, tamaño de barra y `maxW`, y memoiza el resultado post-overflow.
+- **CRÍTICO para la E2**: cualquier estado visual nuevo que no viva en `WidgetItem` (p. ej. colores de severidad calculados desde métricas) **debe sumarse a la clave del cache** o el strip no repinta. Si la severidad entra como campo de `WidgetItem`, el `SameItems` la cubre.
+- **Guarda anti-reinicio**: `StartHover` no-op cuando la dirección ya coincide — sin eso, `WM_MOUSEMOVE` continuo reinicia el fade-in y la animación nunca termina.
+- **Tiempos de build**: `make && make test` tarda ~8 min (50+ tests compilados); `build.bat` solo la app es rápido. Planificar los waits del orquestador en consecuencia.
+
 ## Skeletons
 
 ### Etapa 1 — Métricas nativas sin admin
