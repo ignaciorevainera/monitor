@@ -35,7 +35,7 @@ Una sola app nativa, sin admin, que muestra en la taskbar: métricas del sistema
 | D9 | Hover | El resaltado de fondo al pasar el mouse se **mantiene** (decisión retractada el 20-11-2026 tras ver la E1; se había quitado y se restauró); tooltip y clic intactos |
 | D10 | Iconos | Solo Segoe Fluent Icons, mismo renderer que baterías. Candidatos: CPU `EEA1`, RAM `EEA0`, GPU `E950` (Component), temp `E957` (Sensor), SSD `EDA2` (HardDrive), VRAM = RAM + caption `V`. Validar en sprite 16 px antes de fijar |
 | D11 | Umbrales de temp | CPU/GPU 80/90 °C, SSD 65/75 °C; naranja/rojo como TraySense |
-| D12 | Clic | Izquierdo abre el menú (como hoy); se agrega "Abrir Administrador de tareas" |
+| D12 | Clic | Clic derecho abre el menú (conserva "Abrir Administrador de tareas"); clic izquierdo abre el Administrador de tareas |
 | D13 | Idiomas | Inglés + español completos; el resto cae a inglés |
 | D14 | Métricas default | Heredan `Mask2` de TraySense (63: todo menos SSD temp) al migrar; en installs nuevos, todo menos SSD temp |
 | D15 | Autostart | Un único mecanismo: HKCU Run (sin admin) |

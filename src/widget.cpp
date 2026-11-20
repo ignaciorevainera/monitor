@@ -979,6 +979,8 @@ LRESULT CALLBACK WidgetProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             SetHover(h, false);
             return 0;
         case WM_LBUTTONUP:
+            PostMessageW(g_notify, g_clickMsg, 1, 0);
+            return 0;
         case WM_RBUTTONUP:
             PostMessageW(g_notify, g_clickMsg, 0, 0);
             return 0;
