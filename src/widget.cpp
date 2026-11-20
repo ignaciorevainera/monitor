@@ -1289,6 +1289,33 @@ void SetLightTheme(bool light) {
     PaintAll();
 }
 
+void SuspendHover() {
+    bool changed = g_hoverT != 0.0f || g_hoverDir != 0;
+    g_hoverT = 0.0f;
+    g_hoverFrom = 0.0f;
+    g_hoverStart = 0;
+    g_hoverDir = 0;
+    if (g_wnd) {
+        KillTimer(g_wnd, TIMER_HOVER);
+        if (changed) Paint();
+    }
+    for (auto& m : g_mirrors) {
+        bool mirrorChanged = m.hoverT != 0.0f || m.hoverDir != 0;
+        m.hoverT = 0.0f;
+        m.hoverFrom = 0.0f;
+        m.hoverStart = 0;
+        m.hoverDir = 0;
+        if (m.wnd) {
+            KillTimer(m.wnd, TIMER_HOVER);
+            if (mirrorChanged) PaintMirror(m);
+        }
+    }
+}
+
+void SetTooltipActive(bool active) {
+    if (g_tip) SendMessageW(g_tip, TTM_ACTIVATE, active ? TRUE : FALSE, 0);
+}
+
 void SetBackground(bool on) {
     g_background = on;
     PaintAll();
