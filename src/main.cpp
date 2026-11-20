@@ -1439,9 +1439,12 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
                 line += buf;
             };
             add("cpu", metrics::Id::CpuUsage);
+            add("cpu_temp", metrics::Id::CpuTemp);
             add("ram", metrics::Id::RamUsage);
             add("gpu", metrics::Id::GpuUsage);
+            add("gpu_temp", metrics::Id::GpuTemp);
             add("vram", metrics::Id::Vram);
+            add("ssd_temp", metrics::Id::SsdTemp);
             line += "\r\n";
             DWORD w = 0;
             WriteFile(out, line.data(), static_cast<DWORD>(line.size()), &w, nullptr);

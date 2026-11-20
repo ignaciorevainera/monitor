@@ -1,5 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <winioctl.h>
 #include <pdh.h>
 #include <pdhmsg.h>
 #include <dxgi.h>
@@ -50,6 +51,7 @@ bool LoadPdh() {
 const GUID kIidIdxgifactory1 = { 0x770aae78, 0xf26f, 0x4dba, { 0xa8, 0x29, 0x25, 0x3c, 0x83, 0xd1, 0xb3, 0x87 } };
 
 PDH_HQUERY g_q = nullptr;
+PDH_HCOUNTER g_cTherm = nullptr;
 PDH_HCOUNTER g_cEng = nullptr;
 PDH_HCOUNTER g_cMem = nullptr;
 BYTE* g_buf = nullptr;
@@ -59,6 +61,32 @@ LUID g_luid{};
 bool g_hasGpu = false;
 ULONGLONG g_vramTotal = 0;
 wchar_t g_luidStr[40]{};
+
+using PFN_KMT = LONG(APIENTRY*)(void*);
+struct KMT_OPEN {
+    LUID Luid;
+    UINT hAdapter;
+};
+struct KMT_QAI {
+    UINT hAdapter;
+    UINT Type;
+    void* pData;
+    UINT Size;
+};
+struct KMT_PERF {
+    UINT32 PhysIdx;
+    ULONGLONG MemFreq, MaxMemFreq, MaxMemFreqOC, MemBw, PcieBw;
+    ULONG FanRPM, Power, Temperature;
+    UCHAR PowerStateOverride;
+};
+inline constexpr UINT kKmtQaiTypeAdapterPerfData = 62;
+using PFN_NVTEMP = int(*)(void*, int, unsigned*);
+
+UINT g_kmt = 0;
+PFN_KMT p_KmtQuery = nullptr;
+PFN_NVTEMP p_NvTemp = nullptr;
+void* g_nvDev = nullptr;
+HANDLE g_disk = INVALID_HANDLE_VALUE;
 
 ULONGLONG g_prevIdle = 0;
 ULONGLONG g_prevTot = 0;
@@ -127,6 +155,22 @@ bool HasLuid(const wchar_t* s) {
     return false;
 }
 
+void ReadCpuTemp(Snapshot& out) {
+    DWORD n = 0;
+    double mx = 0.0;
+    PDH_FMT_COUNTERVALUE_ITEM_W* it = PdhItems(g_cTherm, &n);
+    if (!it) return;
+    for (DWORD i = 0; i < n; i++) {
+        if (GoodPdhItem(&it[i]) && it[i].FmtValue.doubleValue > mx) {
+            mx = it[i].FmtValue.doubleValue;
+        }
+    }
+    if (mx > 200.0) {
+        out.val[static_cast<int>(Id::CpuTemp)] = mx - 273.15;
+        out.ok[static_cast<int>(Id::CpuTemp)] = true;
+    }
+}
+
 void ReadGpuUsage(Snapshot& out) {
     DWORD n = 0;
     double eng[64]{};
@@ -164,6 +208,27 @@ void ReadVram(Snapshot& out) {
     out.ok[static_cast<int>(Id::Vram)] = true;
 }
 
+bool KmtTemp(double* t) {
+    if (!g_kmt || !p_KmtQuery) return false;
+    KMT_PERF p{};
+    KMT_QAI q{ g_kmt, kKmtQaiTypeAdapterPerfData, &p, sizeof(p) };
+    if (p_KmtQuery(&q) != 0 || p.Temperature == 0) return false;
+    *t = p.Temperature / 10.0;
+    return true;
+}
+
+void ReadGpuTemp(Snapshot& out) {
+    double t = 0.0;
+    unsigned nt = 0;
+    if (KmtTemp(&t)) {
+        out.val[static_cast<int>(Id::GpuTemp)] = t;
+        out.ok[static_cast<int>(Id::GpuTemp)] = true;
+    } else if (p_NvTemp && p_NvTemp(g_nvDev, 0, &nt) == 0) {
+        out.val[static_cast<int>(Id::GpuTemp)] = static_cast<double>(nt);
+        out.ok[static_cast<int>(Id::GpuTemp)] = true;
+    }
+}
+
 void InitGpu() {
     HMODULE d = SysDll(L"dxgi.dll");
     if (d) {
@@ -188,6 +253,74 @@ void InitGpu() {
     if (!g_hasGpu) return;
     _snwprintf(g_luidStr, ARRAYSIZE(g_luidStr), L"luid_0x%08X_0x%08X",
                static_cast<unsigned>(g_luid.HighPart), static_cast<unsigned>(g_luid.LowPart));
+
+    HMODULE gdi = GetModuleHandleW(L"gdi32.dll");
+    if (gdi) {
+        auto pOpen = reinterpret_cast<PFN_KMT>(reinterpret_cast<void*>(GetProcAddress(gdi, "D3DKMTOpenAdapterFromLuid")));
+        p_KmtQuery = reinterpret_cast<PFN_KMT>(reinterpret_cast<void*>(GetProcAddress(gdi, "D3DKMTQueryAdapterInfo")));
+        KMT_OPEN o{ g_luid, 0 };
+        if (pOpen && pOpen(&o) == 0) g_kmt = o.hAdapter;
+    }
+
+    double t = 0.0;
+    if (!KmtTemp(&t)) {
+        HMODULE nv = SysDll(L"nvml.dll");
+        if (!nv) {
+            nv = LoadLibraryExW(L"C:\\Program Files\\NVIDIA Corporation\\NVSMI\\nvml.dll", nullptr,
+                                LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
+        }
+        if (nv) {
+            auto init = reinterpret_cast<int(*)()>(reinterpret_cast<void*>(GetProcAddress(nv, "nvmlInit_v2")));
+            auto hnd = reinterpret_cast<int(*)(unsigned, void**)>(reinterpret_cast<void*>(GetProcAddress(nv, "nvmlDeviceGetHandleByIndex_v2")));
+            auto tp = reinterpret_cast<PFN_NVTEMP>(reinterpret_cast<void*>(GetProcAddress(nv, "nvmlDeviceGetTemperature")));
+            if (init && hnd && tp && init() == 0 && hnd(0, &g_nvDev) == 0) {
+                p_NvTemp = tp;
+            } else {
+                FreeLibrary(nv);
+            }
+        }
+    }
+}
+
+void InitDisk() {
+    DWORD num = 0;
+    DWORD got = 0;
+    wchar_t sysdrv[8] = L"\\\\.\\C:";
+    wchar_t p[40]{};
+    wchar_t win[MAX_PATH]{};
+    if (GetWindowsDirectoryW(win, MAX_PATH) >= 2) sysdrv[4] = win[0];
+    HANDLE v = CreateFileW(sysdrv, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+    if (v != INVALID_HANDLE_VALUE) {
+        BYTE b[256]{};
+        if (DeviceIoControl(v, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, nullptr, 0, b, sizeof(b), &got, nullptr)) {
+            num = reinterpret_cast<VOLUME_DISK_EXTENTS*>(b)->Extents[0].DiskNumber;
+        }
+        CloseHandle(v);
+    }
+    _snwprintf(p, ARRAYSIZE(p), L"\\\\.\\PhysicalDrive%u", static_cast<unsigned>(num));
+    p[ARRAYSIZE(p) - 1] = 0;
+    g_disk = CreateFileW(p, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+}
+
+void ReadDisk(Snapshot& out) {
+    if (g_disk == INVALID_HANDLE_VALUE) return;
+    STORAGE_PROPERTY_QUERY q{};
+    BYTE b[512]{};
+    DWORD got = 0;
+    q.PropertyId = StorageDeviceTemperatureProperty;
+    q.QueryType = PropertyStandardQuery;
+    if (!DeviceIoControl(g_disk, IOCTL_STORAGE_QUERY_PROPERTY, &q, sizeof(q), b, sizeof(b), &got, nullptr)) return;
+    auto* d = reinterpret_cast<STORAGE_TEMPERATURE_DATA_DESCRIPTOR*>(b);
+    if (got < sizeof(*d) || !d->InfoCount) return;
+    int mx = -1000;
+    for (WORD i = 0; i < d->InfoCount; i++) {
+        if (reinterpret_cast<BYTE*>(&d->TemperatureInfo[i + 1]) > b + got) break;
+        if (d->TemperatureInfo[i].Temperature > mx) mx = d->TemperatureInfo[i].Temperature;
+    }
+    if (mx > 0 && mx < 150) {
+        out.val[static_cast<int>(Id::SsdTemp)] = static_cast<double>(mx);
+        out.ok[static_cast<int>(Id::SsdTemp)] = true;
+    }
 }
 
 void BuildQuery() {
@@ -195,18 +328,24 @@ void BuildQuery() {
         p_PdhCloseQuery(g_q);
         g_q = nullptr;
     }
+    g_cTherm = nullptr;
     g_cEng = nullptr;
     g_cMem = nullptr;
-    if (!g_hasGpu || !LoadPdh()) return;
+    if (!LoadPdh()) return;
     if (p_PdhOpenQueryW(nullptr, 0, &g_q) != ERROR_SUCCESS) {
         g_q = nullptr;
         return;
     }
-    if (p_PdhAddEnglishCounterW(g_q, L"\\GPU Engine(*)\\Utilization Percentage", 0, &g_cEng) != ERROR_SUCCESS) {
-        g_cEng = nullptr;
+    if (p_PdhAddEnglishCounterW(g_q, L"\\Thermal Zone Information(*)\\Temperature", 0, &g_cTherm) != ERROR_SUCCESS) {
+        g_cTherm = nullptr;
     }
-    if (p_PdhAddEnglishCounterW(g_q, L"\\GPU Adapter Memory(*)\\Dedicated Usage", 0, &g_cMem) != ERROR_SUCCESS) {
-        g_cMem = nullptr;
+    if (g_hasGpu) {
+        if (p_PdhAddEnglishCounterW(g_q, L"\\GPU Engine(*)\\Utilization Percentage", 0, &g_cEng) != ERROR_SUCCESS) {
+            g_cEng = nullptr;
+        }
+        if (p_PdhAddEnglishCounterW(g_q, L"\\GPU Adapter Memory(*)\\Dedicated Usage", 0, &g_cMem) != ERROR_SUCCESS) {
+            g_cMem = nullptr;
+        }
     }
     p_PdhCollectQueryData(g_q);
 }
@@ -215,6 +354,7 @@ void EnsureInit() {
     if (g_inited) return;
     g_inited = true;
     InitGpu();
+    InitDisk();
     BuildQuery();
     Snapshot dummy{};
     ReadCpu(dummy);
@@ -229,9 +369,12 @@ bool TakeSnapshot(Snapshot& out) {
     ReadCpu(out);
     ReadRam(out);
     if (g_q && p_PdhCollectQueryData(g_q) == ERROR_SUCCESS) {
+        if (g_cTherm) ReadCpuTemp(out);
         if (g_cEng) ReadGpuUsage(out);
         if (g_cMem) ReadVram(out);
     }
+    ReadGpuTemp(out);
+    ReadDisk(out);
     return true;
 }
 
@@ -284,6 +427,10 @@ unsigned long __stdcall MetricsWorker(void*) {
         HeapFree(GetProcessHeap(), 0, g_buf);
         g_buf = nullptr;
         g_bufSz = 0;
+    }
+    if (g_disk != INVALID_HANDLE_VALUE) {
+        CloseHandle(g_disk);
+        g_disk = INVALID_HANDLE_VALUE;
     }
     if (g_wake) {
         CloseHandle(g_wake);
