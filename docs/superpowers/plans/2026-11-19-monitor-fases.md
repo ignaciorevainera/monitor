@@ -53,6 +53,14 @@ Estado: 19-11-2026. Spec: `docs/monitor-spec.md` (decisiones D1–D15).
 - **Iconos de bandeja de métricas son value-only** (estilo de la casa: los dispositivos también dibujan solo número); `widget::SeverityColor` es la fuente única de colores de severidad compartida entre strip y bandeja, y `iconSig` incluye severidad.
 - **Defaults nuevos no pisan config guardada** (`LoadMetricsWhere` gana): en la máquina del usuario las temps se activan desde el menú, no por reset.
 
+## Deltas aprendidos en la E2.5 (bandeja completa + temps agrupados)
+
+- **Modo bandeja**: `ApplyMetricTray` es mode-aware (widget → solo `where == Tray`; bandeja → todo `where != Hidden`) y `Reconcile` refresca los iconos de métricas en ambos cambios de modo. Idempotente vía el flag `added`.
+- **Temps agrupados** (`GroupTempsWithUsage`, default OFF): pieza inline tras el porcentaje del uso; sin `E957` con ON (CPU `EEA1`, GPU `E950`, SSD `EDA2`); con OFF byte-idéntico. Los campos inline entraron a `SameItems` (regla del cache aplicada por tercera vez).
+- **Zona libre de IDs 117-199**: `ID_METRIC_GROUP=150` vive ahí; futuros IDs de menú simples van a esa zona.
+- **El menú usa `TrackPopupMenu` + `switch(cmd)`**, no `WM_COMMAND` — los handlers nuevos de menú siguen ese patrón.
+- Cero REJECT en esta pasada (2/2 approve a la primera); la suite + clean rebuild ~10 min por tarea — seguir esperando con `hc wait` largo.
+
 ## Skeletons
 
 ### Etapa 1 — Métricas nativas sin admin
