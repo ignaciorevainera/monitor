@@ -53,7 +53,8 @@ int main() {
     b.val[0] = 26.0;
     assert(!SameValues(a, b));
 
-    static_assert(kTrayUidBase > 0x1000, "kTrayUidBase must stay above StableId range");
+    // StableId always sets bit 8 (0x100), while 0x2000..0x2006 have bit 8 clear.
+    static_assert((kTrayUidBase & 0x100) == 0, "kTrayUidBase..+6 must keep bit 8 clear so it never collides with StableId");
     assert(kTrayUidBase > 0x1000);
     for (uint32_t id = 0; id < 7; id++) {
         uint32_t uid = kTrayUidBase + id;
