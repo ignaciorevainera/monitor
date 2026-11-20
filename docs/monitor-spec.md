@@ -32,7 +32,7 @@ Una sola app nativa, sin admin, que muestra en la taskbar: métricas del sistema
 | D6 | Ubicación por métrica | Barra / Bandeja / Oculta; default Barra |
 | D7 | Orden del strip | Métricas a la izquierda, baterías a la derecha, **un único gap** (`Px(14)`) entre ítems; opciones de orden/gap → backlog |
 | D8 | Refresh métricas | Default 5 s; menú 1/2/5 s; baterías siguen con su poll propio (30–3600 s) |
-| D9 | Sin hover | Se elimina el resaltado de fondo al pasar el mouse (strip primario y espejos); tooltip y clic quedan |
+| D9 | Hover | El resaltado de fondo al pasar el mouse se **mantiene** (decisión retractada el 20-11-2026 tras ver la E1; se había quitado y se restauró); tooltip y clic intactos |
 | D10 | Iconos | Solo Segoe Fluent Icons, mismo renderer que baterías. Candidatos: CPU `EEA1`, RAM `EEA0`, GPU `E950` (Component), temp `E957` (Sensor), SSD `EDA2` (HardDrive), VRAM = RAM + caption `V`. Validar en sprite 16 px antes de fijar |
 | D11 | Umbrales de temp | CPU/GPU 80/90 °C, SSD 65/75 °C; naranja/rojo como TraySense |
 | D12 | Clic | Izquierdo abre el menú (como hoy); se agrega "Abrir Administrador de tareas" |

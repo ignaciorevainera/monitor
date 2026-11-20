@@ -27,6 +27,15 @@ Estado: 19-11-2026. Spec: `docs/monitor-spec.md` (decisiones D1–D15).
 - **Mutex heredado verificado en runtime**: Monitor y el BatteryHub viejo no coexisten — exactamente lo que el upgrade in-place necesita.
 - **Orquestación hc/Antigravity**: prompts van con `-i` (posicional no funciona); briefs de una línea sin comillas dobles; cada `hc send` del hijo pide permiso (el orquestador aprueba con `keys enter`); CI ~10 min por push; la API anónima lee runs, los logs requieren auth — reproducir local es más rápido.
 
+## Deltas aprendidos en la Etapa 1 (para los planes de etapas futuras)
+
+- **D9 retractada por el usuario**: el hover se mantiene. La eliminación de la E0 se revirtió y se fusionó con el `maxW` del overflow (`1e2957f`); `spec D9` actualizada.
+- **El reviewer fresco por tarea paga**: encontró un bug real que el builder no vio (compacto roto en layouts stacked/vertical: gaps hardcodeados, indicador `…` solapado, anchos mal contados) → REJECT → fix `3c25d12` → APPROVE. Mantener el gate.
+- **appsR medido en el hilo UIA existente** funcionó; sin lookup, `Reposition` cae a ancho infinito (nunca tapa botones).
+- **`--metrics-dump` no imprime desde shells sin consola** (exe `-mwindows` + `AttachConsole`): verificar siempre desde una consola real; path con espacio se rompe en la cadena `hc exec cmd /c` → usar el path corto 8.3.
+- **El strip de TraySense no es scripable** (GDI layered): la comparación válida es contra contadores de Windows (RAM Δ0.1 en la verificación final) + ojo humano.
+- **uIDs de bandeja**: disjuntos de `StableId` por el bit 8 que `StableId` siempre setea (`| 0x100`), no por rango. Tenerlo en cuenta si se agregan más uIDs.
+
 ## Skeletons
 
 ### Etapa 1 — Métricas nativas sin admin
