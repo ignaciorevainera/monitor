@@ -34,7 +34,7 @@ build/app_res.o: res/app.rc res/app.manifest res/app.ico res/app_light.ico build
 clean:
 	rm -rf build Monitor.exe
 
-test: test-update-core test-update-win test-update-signature test-metrics
+test: test-update-core test-update-win test-update-signature test-metrics test-overflow
 	@mkdir -p build
 	$(CXX) -std=c++17 -O2 -Wall tests/device_aliases_test.cpp -o build/device_aliases_test.exe
 	./build/device_aliases_test.exe
@@ -138,4 +138,9 @@ test-metrics:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra tests/metrics_test.cpp src/metrics/metrics_format.cpp -o build/metrics_test.exe
 	./build/metrics_test.exe
 
-.PHONY: clean test test-update-core test-update-win test-update-signature test-metrics FORCE
+test-overflow:
+	@mkdir -p build
+	$(CXX) -std=c++17 -O2 -Wall -Wextra tests/overflow_test.cpp -o build/overflow_test.exe
+	./build/overflow_test.exe
+
+.PHONY: clean test test-update-core test-update-win test-update-signature test-metrics test-overflow FORCE

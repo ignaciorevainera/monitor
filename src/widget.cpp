@@ -1,6 +1,7 @@
 #include "widget.h"
 
 #include "i18n.h"
+#include "metrics/overflow.h"
 
 #include <commctrl.h>
 #include <uiautomation.h>
@@ -19,6 +20,8 @@ std::vector<WidgetItem> g_items;
 std::wstring g_tipText;
 RECT g_lastTray{}, g_lastBar{}, g_lastWidgets{};
 int g_lastW = -1, g_lastDpi = 0, g_lastLeft = -1;
+int g_maxW = INT_MAX;
+std::wstring g_hiddenTip;
 SIZE g_size{};
 HINSTANCE g_inst;
 
@@ -61,6 +64,9 @@ int Px(int v) { return MulDiv(v, Dpi(), 96); }
 SRWLOCK g_wbLock = SRWLOCK_INIT;
 RECT g_wbRect{};             // last Widgets button rectangle (screen), empty when unknown
 HWND g_wbRectBar;            // taskbar g_wbRect was found in (guarded by g_wbLock)
+int g_appsR = 0;             // right edge of primary taskbar app buttons (screen x, guarded by g_wbLock)
+bool g_hasAppsR = false;
+HWND g_appsRBar = nullptr;
 HWND g_wbTaskbar;            // taskbar to search, null while there is no widget (guarded by g_wbLock)
 HANDLE g_wbWake;             // auto-reset: wakes the lookup thread early
 
@@ -154,10 +160,61 @@ bool IsXamlTaskbar(HWND bar) {
     return FindWindowExW(bar, nullptr, L"Windows.UI.Composition.DesktopWindowContentBridge", nullptr) != nullptr;
 }
 
+bool StartsWith(const wchar_t* s, const wchar_t* p) {
+    return s && !wcsncmp(s, p, wcslen(p));
+}
+
+bool MeasurePrimaryAppsRight(IUIAutomation* uia, IUIAutomationCondition* allCond, IUIAutomationCacheRequest* cache,
+                             HWND tb, int& outAppsR) {
+    RECT tr{};
+    if (!GetWindowRect(tb, &tr) || !IsXamlTaskbar(tb)) return false;
+    IUIAutomationElement* root = nullptr;
+    IUIAutomationElementArray* arr = nullptr;
+    int cnt = 0;
+    if (SUCCEEDED(uia->ElementFromHandle(tb, &root)) && root &&
+        SUCCEEDED(root->FindAllBuildCache(TreeScope_Descendants, allCond, cache, &arr)) && arr)
+        arr->get_Length(&cnt);
+    int tbw = tr.right - tr.left;
+    int appsR = tr.left;
+    bool hasApps = false;
+    HWND tn = FindWindowExW(tb, nullptr, L"TrayNotifyWnd", nullptr);
+    RECT nr{};
+    bool hasTray = tn && GetWindowRect(tn, &nr) && nr.right > nr.left;
+    for (int i = 0; i < cnt; i++) {
+        IUIAutomationElement* e = nullptr;
+        if (FAILED(arr->GetElement(i, &e)) || !e) continue;
+        BSTR cls = nullptr;
+        RECT r{};
+        BOOL off = FALSE;
+        e->get_CachedClassName(&cls);
+        e->get_CachedBoundingRectangle(&r);
+        e->get_CachedIsOffscreen(&off);
+        int w = r.right - r.left;
+        if (!off && w > 0 && r.bottom > r.top && w < tbw / 3 && r.top < tr.bottom && r.bottom > tr.top &&
+            (!hasTray || r.right <= nr.left)) {
+            if (StartsWith(cls, L"Taskbar.") || StartsWith(cls, L"StartButton") || StartsWith(cls, L"SearchBox")) {
+                if (r.right > appsR) {
+                    appsR = r.right;
+                    hasApps = true;
+                }
+            }
+        }
+        if (cls) SysFreeString(cls);
+        e->Release();
+    }
+    if (arr) arr->Release();
+    if (root) root->Release();
+    if (!hasApps) return false;
+    outAppsR = appsR;
+    return true;
+}
+
 DWORD WINAPI WidgetsButtonThread(LPVOID) {
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     IUIAutomation* uia = nullptr;
     IUIAutomationElement* btn = nullptr;
+    IUIAutomationCondition* allCond = nullptr;
+    IUIAutomationCacheRequest* cache = nullptr;
     HWND btnBar = nullptr;
     for (;;) {
         WaitForSingleObject(g_wbWake, btnBar ? 5000 : INFINITE);  // no widget (tray-icon mode): sleep until one
@@ -167,9 +224,17 @@ DWORD WINAPI WidgetsButtonThread(LPVOID) {
         if (btn && bar != btnBar) { btn->Release(); btn = nullptr; }
         btnBar = bar;
         RECT r{};
+        int appsR = 0;
+        bool hasApps = false;
         if (bar && IsWindow(bar)) {
             if (!uia)
                 CoCreateInstance(__uuidof(CUIAutomation), nullptr, CLSCTX_INPROC_SERVER, __uuidof(IUIAutomation), (void**)&uia);
+            if (uia && !allCond) uia->CreateTrueCondition(&allCond);
+            if (uia && !cache && SUCCEEDED(uia->CreateCacheRequest(&cache)) && cache) {
+                cache->AddProperty(UIA_ClassNamePropertyId);
+                cache->AddProperty(UIA_BoundingRectanglePropertyId);
+                cache->AddProperty(UIA_IsOffscreenPropertyId);
+            }
             if (uia && !btn) {
                 IUIAutomationElement* root = nullptr;
                 IUIAutomationCondition* cond = nullptr;
@@ -189,6 +254,7 @@ DWORD WINAPI WidgetsButtonThread(LPVOID) {
                 btn = nullptr;
                 r = {};
             }
+            if (uia && allCond && cache) hasApps = MeasurePrimaryAppsRight(uia, allCond, cache, bar, appsR);
         }
         AcquireSRWLockShared(&g_wbLock);
         bool mirrors = g_wbMirrors;
@@ -202,6 +268,9 @@ DWORD WINAPI WidgetsButtonThread(LPVOID) {
         if (bar && g_wbTaskbar == bar) {  // drop a result for a taskbar we no longer sit on
             g_wbRect = r;
             g_wbRectBar = bar;
+            g_appsR = appsR;
+            g_hasAppsR = hasApps;
+            g_appsRBar = bar;
         }
         g_spans = std::move(spans);
         ReleaseSRWLockExclusive(&g_wbLock);
@@ -231,6 +300,14 @@ RECT WidgetsButtonRect() {
     return r;
 }
 
+bool PrimaryAppsRight(int& out) {
+    AcquireSRWLockShared(&g_wbLock);
+    bool ok = g_hasAppsR && g_appsRBar && g_appsRBar == g_wbTaskbar;
+    if (ok) out = g_appsR;
+    ReleaseSRWLockShared(&g_wbLock);
+    return ok;
+}
+
 void ApplyTipTheme() {
     if (!g_tip) return;
     using SetWindowThemeFn = HRESULT(WINAPI*)(HWND, LPCWSTR, LPCWSTR);
@@ -256,6 +333,7 @@ wchar_t Glyph(DeviceKind k, bool bluetooth, wchar_t glyphOverride = 0) {
 }
 constexpr wchar_t kBolt = 0xE945;            // LightningBolt
 constexpr wchar_t kCheck = 0xE73E;           // CheckMark, in place of the bolt once fully charged
+constexpr wchar_t kMore = 0xE712;            // More ("...") when items are hidden due to overflow
 constexpr wchar_t kBatteryUnknown = 0xE996;  // shown when there is nothing to display
 
 // Creates a font, falling back when the preferred face is not installed (GDI would silently substitute).
@@ -397,7 +475,9 @@ struct Piece {
 //    used only when the taskbar is tall enough, otherwise the normal row
 //  * vertical (left / right taskbar, from PR #321): one device per row block, stacked top to bottom
 // `width` and `height` return the strip's size; in the vertical layout the width is the bar's.
-std::vector<Piece> Layout(int barW, int barH, int& width, int& height) {
+std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool compact = false,
+                          const std::vector<uint8_t>* skip = nullptr, bool showMore = false,
+                          std::vector<int>* itemWidths = nullptr, int* moreWidth = nullptr) {
     Rgb fg = g_light ? Rgb{ 0, 0, 0 } : Rgb{ 255, 255, 255 };
     Rgb red = g_light ? Rgb{ 196, 30, 40 } : Rgb{ 255, 90, 90 };
     Rgb charge = g_light ? Rgb{ 0, 120, 212 } : Rgb{ 96, 205, 255 };
@@ -407,11 +487,26 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height) {
     HFONT text = MakeFont(Px(13), FW_NORMAL, L"Segoe UI Variable Text", L"Segoe UI", Px(12));
     HFONT caption = MakeFont(std::max(8, Px(7)), FW_SEMIBOLD, L"Segoe UI Variable Text", L"Segoe UI");  // never under 8 px
 
+    int itemGap = compact ? Px(6) : Px(14);
     std::vector<Piece> out;
     struct Slot { int icon, label, bolt; };  // indices of one device's pieces
     std::vector<Slot> slots;
+    if (showMore) {
+        Piece more{ RenderMask(std::wstring(1, kMore), icons, g_light), fg, 220, itemGap };
+        if (moreWidth) *moreWidth = more.m.w + itemGap;
+        out.push_back(std::move(more));
+    } else if (moreWidth) {
+        Mask mm = RenderMask(std::wstring(1, kMore), icons, g_light);
+        *moreWidth = mm.w + itemGap;
+    }
+    if (itemWidths) itemWidths->assign(g_items.size(), 0);
     if (g_items.empty()) out.push_back({ RenderMask(std::wstring(1, kBatteryUnknown), icons, g_light), fg, 110, 0 });
+    size_t lastVisible = g_items.size();
+    for (size_t i = g_items.size(); i-- > 0;) {
+        if (!skip || !(*skip)[i]) { lastVisible = i; break; }
+    }
     for (size_t i = 0; i < g_items.size(); i++) {
+        if (skip && (*skip)[i]) continue;
         const auto& it = g_items[i];
         int a = it.dim ? 120 : 255;
         Rgb tc = it.low ? red : fg;
@@ -427,6 +522,7 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height) {
             icon.halo = Halo(icon.m, icon.haloR);
             icon.haloAlpha = g_light ? 60 : 140;
         }
+        int iw = icon.m.w + icon.gapAfter;
         out.push_back(std::move(icon));
         std::wstring t = !it.text.empty() ? it.text : it.percent >= 0 ? std::to_wstring(it.percent) + L"%" : L"?";
         Piece label{ RenderMask(t, text, g_light), tc, a, mark ? Px(2) : 0 };
@@ -434,10 +530,17 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height) {
             label.barPct = it.percent;
             label.barColor = it.low ? red : accent;
         }
+        iw += label.m.w + label.gapAfter;
         out.push_back(std::move(label));
-        if (mark) out.push_back({ RenderMask(std::wstring(1, it.full ? kCheck : kBolt), bolt, g_light), it.full ? full : charge, a, 0 });
-        out.back().gapAfter = i + 1 < g_items.size() ? Px(14) : 0;
-        if (!it.label.empty()) {  // tiny caption in the bottom-right corner of the icon
+        if (mark) {
+            Piece mp{ RenderMask(std::wstring(1, it.full ? kCheck : kBolt), bolt, g_light), it.full ? full : charge, a, 0 };
+            iw += mp.m.w;
+            out.push_back(std::move(mp));
+        }
+        int gap = i < lastVisible ? itemGap : 0;
+        out.back().gapAfter = gap;
+        if (itemWidths) (*itemWidths)[i] = iw + itemGap;
+        if (!compact && !it.label.empty()) {  // tiny caption in the bottom-right corner of the icon
             Piece c{ RenderMask(it.label, caption, g_light), fg, a, 0 };
             c.anchor = (int)glyph;
             c.bx = out[glyph].m.w - c.m.w + Px(3);
@@ -509,11 +612,50 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height) {
 }
 
 // Draws the strip for one window: the primary one or a mirror on a secondary taskbar.
-void PaintStrip(HWND wnd, HWND taskbar, SIZE& size) {
+void PaintStrip(HWND wnd, HWND taskbar, SIZE& size, int maxW = INT_MAX) {
     RECT bar;
     GetClientRect(taskbar, &bar);
     int W = 0, H = 0;
     auto pieces = Layout(bar.right - bar.left, bar.bottom - bar.top, W, H);
+    if (wnd == g_wnd) g_hiddenTip.clear();
+    if (!g_vertical && maxW < INT_MAX && W > maxW && !g_items.empty()) {
+        std::vector<int> itemWidths;
+        int moreW = 0;
+        pieces = Layout(bar.right - bar.left, bar.bottom - bar.top, W, H, true, nullptr, false, &itemWidths, &moreW);
+        if (W > maxW) {
+            std::vector<uint8_t> isMetric(g_items.size(), 0);
+            int lowIdx = -1;
+            for (size_t i = 0; i < g_items.size(); i++) {
+                isMetric[i] = g_items[i].metric >= 0 ? 1 : 0;
+                if (g_items[i].metric < 0 && g_items[i].low && lowIdx < 0) lowIdx = static_cast<int>(i);
+            }
+            int avail = std::max(0, maxW - moreW - Px(16));
+            auto hidden = metrics::PickHidden(itemWidths, avail, isMetric, lowIdx);
+            if (!hidden.empty()) {
+                std::vector<uint8_t> skip(g_items.size(), 0);
+                std::wstring names;
+                for (int idx : hidden) {
+                    if (idx >= 0 && idx < static_cast<int>(g_items.size())) {
+                        skip[idx] = 1;
+                        if (!g_items[idx].name.empty()) {
+                            if (!names.empty()) names += L", ";
+                            names += g_items[idx].name;
+                        }
+                    }
+                }
+                if (wnd == g_wnd && !names.empty()) g_hiddenTip = T(L"Hidden") + std::wstring(L": ") + names;
+                pieces = Layout(bar.right - bar.left, bar.bottom - bar.top, W, H, true, &skip, true);
+            }
+        }
+    }
+    if (wnd == g_wnd && g_tip && !g_tipText.empty()) {
+        std::wstring fullTip = g_hiddenTip.empty() ? g_tipText : (g_hiddenTip + L"\n" + g_tipText);
+        TTTOOLINFOW ti{ sizeof(ti) };
+        ti.hwnd = g_notify;
+        ti.lpszText = const_cast<wchar_t*>(fullTip.c_str());
+        ti.uId = (UINT_PTR)g_wnd;
+        SendMessageW(g_tip, TTM_UPDATETIPTEXTW, 0, (LPARAM)&ti);
+    }
     if (W <= 0 || H <= 0) return;
     Canvas cv(W, H);
 
@@ -585,7 +727,7 @@ void PaintStrip(HWND wnd, HWND taskbar, SIZE& size) {
 
 void Paint() {
     if (!g_wnd) return;
-    PaintStrip(g_wnd, g_taskbar, g_size);
+    PaintStrip(g_wnd, g_taskbar, g_size, g_maxW);
     g_lastW = -1;  // force a re-position with the new size
 }
 
@@ -1000,15 +1142,30 @@ bool Reposition() {
         edge = rtl ? wb.right : wb.left;
     POINT p{ edge, bar.top };
     ScreenToClient(g_taskbar, &p);
-    int left = p.x - g_size.cx - Px(2);
-
+    int rightClient = p.x - Px(2);
 
     // Optional user override in DPI-independent pixels (e.g. for custom padding).
     DWORD customOffset = 0, sz = sizeof(customOffset);
     if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\WirelessBattery", L"TaskbarOffset",
                      RRF_RT_REG_DWORD, nullptr, &customOffset, &sz) == ERROR_SUCCESS) {
-        left -= Px((int)customOffset);
+        rightClient -= Px((int)customOffset);
     }
+
+    int newMaxW = INT_MAX;
+    int minLeft = 0;
+    int appsR = 0;
+    if (!rtl && PrimaryAppsRight(appsR)) {
+        POINT pa{ appsR, bar.top };
+        ScreenToClient(g_taskbar, &pa);
+        minLeft = pa.x + Px(4);
+        newMaxW = std::max(0, rightClient - minLeft);
+    }
+    if (newMaxW != g_maxW) {
+        g_maxW = newMaxW;
+        Paint();
+    }
+    int left = rightClient - g_size.cx;
+    if (minLeft > 0 && left < minLeft) left = minLeft;
 
     // Windows 10: Explorer re-expands the task buttons on its own layout passes; narrow them again.
     if (g_rebar && IsWindow(g_rebar)) {

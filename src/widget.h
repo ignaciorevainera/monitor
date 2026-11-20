@@ -21,6 +21,7 @@ struct WidgetItem {
     Accent accent  = Accent::None;  // brand color for the icon, its glow and the level bar
     int metric     = -1;     // >= 0: system metric id
     wchar_t glyphOverride = 0;  // explicit Segoe Fluent glyph when non-zero
+    std::wstring name;       // human-readable name for overflow tooltip
 };
 
 namespace widget {

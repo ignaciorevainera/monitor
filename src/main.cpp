@@ -696,6 +696,7 @@ void UpdateWidget() {
         WidgetItem it;
         it.metric = idx;
         it.glyphOverride = m.glyph;
+        it.name = T(m.name);
         it.text = valText;
         it.dim = !ok;
         if (m.label) it.label = m.label;
@@ -707,6 +708,7 @@ void UpdateWidget() {
         auto* e = list[i];
         WidgetItem it;
         it.kind = e->st.kind;
+        it.name = DisplayName(*e);
         bool offline = !e->st.connected;
         it.percent = offline ? -1 : (e->st.percent >= 0 ? e->st.percent : e->lastPct);
         if (offline) it.text = L"\u00D7";  // clear status, not a stale percentage
