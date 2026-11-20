@@ -1,4 +1,4 @@
-# BatteryHub UI phrases. To add a language:
+# Monitor UI phrases. To add a language:
 #  1. Copy this file to xx.txt (xx = language code, e.g. "it" or "pt-BR") in the lang folder.
 #  2. Fill in @code and @name (the language in its own words); add "@rtl = 1" for right-to-left scripts.
 #  3. Write the translation after " = " on each line. Lines left empty stay English.

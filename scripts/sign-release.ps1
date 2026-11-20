@@ -27,7 +27,7 @@ if (-not $SumsFile) {
 }
 $data = [IO.File]::ReadAllBytes($SumsFile)
 $text = [Text.Encoding]::ASCII.GetString($data)
-$setup = "BatteryHub-Setup-$Version.exe"
+$setup = "Monitor-Setup-$Version.exe"
 if ($text -notmatch "(?m)^[0-9a-fA-F]{64} [ *]$([regex]::Escape($setup))\r?$") { throw "SHA256SUMS.txt does not list $setup." }
 
 # If this PC has the same files (for example a local build), they must match the list.

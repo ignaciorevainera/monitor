@@ -1,4 +1,4 @@
-// BatteryHub - tray app showing the battery level of wireless mice, headsets and Bluetooth devices.
+// Monitor - tray app showing the battery level of wireless mice, headsets and Bluetooth devices.
 #include <windows.h>
 #include <shellapi.h>
 #include <dbt.h>
@@ -57,7 +57,7 @@ enum DeviceCmd : UINT {
     DEV_ALERT_FIRST = 6, DEV_ALERT_DEFAULT = DEV_ALERT_FIRST + 8, DEV_ALERT_OFF, DEV_STRIDE = 16
 };
 
-const wchar_t* kAppName = L"BatteryHub";
+const wchar_t* kAppName = L"Monitor";
 const wchar_t* kRunKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 const wchar_t* kRunValue = L"WirelessBattery";
 
@@ -490,7 +490,7 @@ void ShowBatteryAlert(TrayEntry& e) {
     // long enough for the shell to display the notification, then remove it.
     if (!g_placeholderIcon) g_placeholderIcon = RenderIcon(L"-", -1, Foreground(), Foreground(), true);
     TrayCall(g_alertIconAdded ? NIM_MODIFY : NIM_ADD, ALERT_ICON_ID, g_placeholderIcon,
-             L"BatteryHub", title.c_str(), message);
+             L"Monitor", title.c_str(), message);
     g_alertIconAdded = true;
     SetTimer(g_hwnd, TIMER_ALERT_ICON, 60 * 1000, nullptr);
 }
@@ -504,7 +504,7 @@ void UpdatePlaceholder() {
     for (auto& [k, e] : g_entries) any |= e.added;
     if (!any && !g_placeholder) {
         if (!g_placeholderIcon) g_placeholderIcon = RenderIcon(L"-", -1, Foreground(), Foreground(), true);
-        TrayCall(NIM_ADD, PLACEHOLDER_ID, g_placeholderIcon, std::wstring(L"BatteryHub\n") + T(L"No devices with battery info found"));
+        TrayCall(NIM_ADD, PLACEHOLDER_ID, g_placeholderIcon, std::wstring(L"Monitor\n") + T(L"No devices with battery info found"));
         g_placeholder = true;
     } else if (any && g_placeholder) {
         TrayDelete(PLACEHOLDER_ID);
@@ -600,7 +600,7 @@ void UpdateWidget() {
         if (!tip.empty()) tip += L"\n";
         tip += DisplayName(*e) + L": " + StatusText(*e);
     }
-    if (tip.empty()) tip = std::wstring(L"BatteryHub: ") + T(L"No devices with battery info found");
+    if (tip.empty()) tip = std::wstring(L"Monitor: ") + T(L"No devices with battery info found");
     widget::SetItems(items, tip);
 }
 
@@ -1114,7 +1114,7 @@ LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     return DefWindowProcW(h, msg, wp, lp);
 }
 
-// `BatteryHub.exe --list` prints what it finds, `--dump` every HID collection.
+// `Monitor.exe --list` prints what it finds, `--dump` every HID collection.
 int ListToConsole(bool dump) {
     HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
     if (!out || out == INVALID_HANDLE_VALUE) {
@@ -1133,7 +1133,7 @@ int ListToConsole(bool dump) {
         std::wstring text = DumpHidCollections();
         wchar_t path[MAX_PATH] = {};
         GetTempPathW(MAX_PATH, path);
-        wcscat_s(path, L"BatteryHub-dump.txt");
+        wcscat_s(path, L"Monitor-dump.txt");
         HANDLE f = CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (f != INVALID_HANDLE_VALUE) {
             std::wstring crlf;
@@ -1194,14 +1194,14 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     if (cmdLine && wcsstr(cmdLine, L"--json")) return ListJson();
     if (cmdLine && wcsstr(cmdLine, L"--help")) {
         MessageBoxW(nullptr,
-                    L"BatteryHub options:\n\n"
+                    L"Monitor options:\n\n"
                     L"--list   Print devices and battery levels\n"
                     L"--json   Print a JSON array of devices and battery levels\n"
                     L"--dump   Print every HID collection and device\n"
                     L"--report Open the \"Request support for a device\" window\n"
                     L"--demo   Show sample devices\n"
                     L"--quit   Quit a running instance",
-                    L"BatteryHub", MB_OK | MB_ICONINFORMATION);
+                    L"Monitor", MB_OK | MB_ICONINFORMATION);
         return 0;
     }
     int argc = 0;

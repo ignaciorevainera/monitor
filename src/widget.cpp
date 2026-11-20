@@ -57,7 +57,7 @@ int Px(int v) { return MulDiv(v, Dpi(), 96); }
 // UI Automation calls go to Explorer and wait for its UI thread, while our widget is a child window
 // of the taskbar, so Explorer in turn waits for our UI thread whenever it lays out or sends input to
 // the widget. Making those calls from our UI thread deadlocks both: Explorer is reported hung
-// ("Cross-process", waiting on BatteryHub.exe) and restarted, again and again. So the lookup
+// ("Cross-process", waiting on Monitor.exe) and restarted, again and again. So the lookup
 // runs on its own thread, which owns no windows, and the UI thread only reads the last rectangle.
 SRWLOCK g_wbLock = SRWLOCK_INIT;
 RECT g_wbRect{};             // last Widgets button rectangle (screen), empty when unknown
@@ -669,7 +669,7 @@ void AddTool(HWND w) {
     ti.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
     ti.hwnd = g_notify;
     ti.uId = (UINT_PTR)w;
-    ti.lpszText = const_cast<wchar_t*>(g_tipText.empty() ? L"BatteryHub" : g_tipText.c_str());
+    ti.lpszText = const_cast<wchar_t*>(g_tipText.empty() ? L"Monitor" : g_tipText.c_str());
     SendMessageW(g_tip, TTM_ADDTOOLW, 0, (LPARAM)&ti);
 }
 
@@ -874,7 +874,7 @@ bool Create(HINSTANCE inst, HWND notifyWnd, UINT clickMsg, bool lightTheme) {
         ti.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
         ti.hwnd = notifyWnd;
         ti.uId = (UINT_PTR)g_wnd;
-        ti.lpszText = const_cast<wchar_t*>(L"BatteryHub");
+        ti.lpszText = const_cast<wchar_t*>(L"Monitor");
         SendMessageW(g_tip, TTM_ADDTOOLW, 0, (LPARAM)&ti);
         SendMessageW(g_tip, TTM_SETMAXTIPWIDTH, 0, 600);
     }
