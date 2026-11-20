@@ -18,6 +18,15 @@ Estado: 19-11-2026. Spec: `docs/monitor-spec.md` (decisiones D1–D15).
 | 4 — Pulido | pendiente | Skeleton |
 | 5 — Distribución | pendiente | Skeleton |
 
+## Deltas aprendidos en la Etapa 0 (para los planes de etapas futuras)
+
+- **Re-correr `make test` tras cualquier renombre**: el fixture `Asset()` de `tests/update_core_test.cpp:15,17` referenciaba `BatteryHub-Setup-1.0.10.exe`; falló en CI (no local — la suite no se re-corrió tras el renombre). Corregido en `c0af8cd`; la regla quedó en el plan de la etapa 0.
+- **El binario viejo instalado NO responde a `--quit`** (build anterior a ese argumento). La Etapa 3 no puede depender de `--quit` del viejo para el upgrade in-place: cerrarlo con Stop-Process o el diálogo de Inno.
+- **`make test` local** requiere `$env:MSYSTEM='MINGW64'` en el proceso padre antes de `bash -lc` (login sourcing de /etc/profile).
+- **Toolchain local reparado**: pacman tenía lock stale + entrada fantasma en la DB local + gcc half-installed; reinstalado con `--overwrite` (transacción gcc+make). Quedó sano y reproducible.
+- **Mutex heredado verificado en runtime**: Monitor y el BatteryHub viejo no coexisten — exactamente lo que el upgrade in-place necesita.
+- **Orquestación hc/Antigravity**: prompts van con `-i` (posicional no funciona); briefs de una línea sin comillas dobles; cada `hc send` del hijo pide permiso (el orquestador aprueba con `keys enter`); CI ~10 min por push; la API anónima lee runs, los logs requieren auth — reproducir local es más rápido.
+
 ## Skeletons
 
 ### Etapa 1 — Métricas nativas sin admin
