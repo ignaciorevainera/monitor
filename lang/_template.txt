@@ -228,5 +228,6 @@ Taskbar =
 Notification area = 
 Hidden = 
 Refresh rate = 
+Group temperature with usage = 
 Reset position = 
 Open Task Manager = 

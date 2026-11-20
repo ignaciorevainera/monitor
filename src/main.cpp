@@ -51,6 +51,7 @@ enum MenuId : UINT {
     ID_REFRESH = 100, ID_AUTOSTART, ID_HIDE_LAST_KNOWN, ID_WIDGET_BACKGROUND, ID_EXIT, ID_MODE_WIDGET, ID_MODE_TRAY, ID_SUPPORT, ID_REPORT,
     ID_BRAND_COLORS, ID_STACKED, ID_SHOW_DISCONNECTED, ID_RECORD_HISTORY,
     ID_OFFSET_LEFT, ID_OFFSET_RIGHT, ID_OFFSET_RESET, ID_TASKMGR,
+    ID_METRIC_GROUP = 150,
     ID_POLL_FIRST = 500,  // "Check battery every": ID_POLL_FIRST + 0..7
     ID_METRIC_INTERVAL_FIRST = 600,  // "Refresh rate": ID_METRIC_INTERVAL_FIRST + 0..2
     ID_METRIC_WHERE_FIRST = 700,     // per-metric location: ID_METRIC_WHERE_FIRST + id * 4 + where
@@ -111,6 +112,7 @@ std::wstring g_widgetMonitor = L"all";  // which taskbars show the widget: "all"
 bool g_widgetBackground = false;  // draw a plate behind the taskbar text (transparent taskbar themes)
 bool g_stacked = false;      // icon above the percentage (menu option)
 bool g_brandColors = false;  // off by default; known brands get their color (Razer green, Logitech blue, ...)
+bool g_groupTempsWithUsage = false;
 std::atomic<DWORD> g_pollIntervalMs{ 60 * 1000 };  // set from the menu, read by the worker thread
 
 struct TrayEntry {
@@ -318,6 +320,8 @@ bool LoadStacked() { return LoadBoolSetting(L"StackedLayout", false); }
 void SaveStacked(bool on) { SaveBoolSetting(L"StackedLayout", on); }
 bool LoadBrandColors() { return LoadBoolSetting(L"BrandColors", false); }
 void SaveBrandColors(bool on) { SaveBoolSetting(L"BrandColors", on); }
+bool LoadGroupTempsWithUsage() { return LoadBoolSetting(L"GroupTempsWithUsage", false); }
+void SaveGroupTempsWithUsage(bool on) { SaveBoolSetting(L"GroupTempsWithUsage", on); }
 DWORD LoadPollSeconds() {
     DWORD v = 60, sz = sizeof(v);
     RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, L"PollIntervalSeconds", RRF_RT_REG_DWORD, nullptr, &v, &sz);
@@ -718,20 +722,54 @@ void UpdateWidget() {
         bool isTemp = m.id == metrics::Id::CpuTemp || m.id == metrics::Id::GpuTemp || m.id == metrics::Id::SsdTemp;
         std::wstring valText = isTemp ? metrics::FormatTemp(g_metricSnap.val[idx], ok)
                                       : metrics::FormatPercent(g_metricSnap.val[idx], ok);
+        int sev = (isTemp && ok) ? metrics::SeverityFor(idx, g_metricSnap.val[idx]) : 0;
+        if (!tip.empty()) tip += L"\n";
+        tip += std::wstring(T(m.name)) + L": " + valText;
+        if (m.id == metrics::Id::CpuTemp) {
+            tip += std::wstring(L" (") + T(L"Thermal zone reading, not a CPU die sensor") + L")";
+        }
+        if (g_groupTempsWithUsage && isTemp) {
+            int siblingUsage = -1;
+            wchar_t componentGlyph = m.glyph;
+            if (m.id == metrics::Id::CpuTemp) {
+                siblingUsage = static_cast<int>(metrics::Id::CpuUsage);
+                componentGlyph = 0xEEA1;
+            } else if (m.id == metrics::Id::GpuTemp) {
+                siblingUsage = static_cast<int>(metrics::Id::GpuUsage);
+                componentGlyph = 0xE950;
+            } else if (m.id == metrics::Id::SsdTemp) {
+                componentGlyph = 0xEDA2;
+            }
+            if (siblingUsage >= 0 && g_metricCfg.where[siblingUsage] == metrics::Where::Bar) {
+                for (auto& existing : items) {
+                    if (existing.metric == siblingUsage) {
+                        existing.inlineTempText = valText;
+                        existing.inlineTempSeverity = sev;
+                        break;
+                    }
+                }
+                continue;
+            }
+            WidgetItem it;
+            it.metric = idx;
+            it.glyphOverride = componentGlyph;
+            it.name = T(m.name);
+            it.text = valText;
+            it.dim = !ok;
+            it.severity = sev;
+            if (m.label) it.label = m.label;
+            items.push_back(it);
+            continue;
+        }
         WidgetItem it;
         it.metric = idx;
         it.glyphOverride = m.glyph;
         it.name = T(m.name);
         it.text = valText;
         it.dim = !ok;
-        it.severity = (isTemp && ok) ? metrics::SeverityFor(idx, g_metricSnap.val[idx]) : 0;
+        it.severity = sev;
         if (m.label) it.label = m.label;
         items.push_back(it);
-        if (!tip.empty()) tip += L"\n";
-        tip += std::wstring(T(m.name)) + L": " + valText;
-        if (m.id == metrics::Id::CpuTemp) {
-            tip += std::wstring(L" (") + T(L"Thermal zone reading, not a CPU die sensor") + L")";
-        }
     }
     for (size_t i = 0; i < list.size(); i++) {
         auto* e = list[i];
@@ -1068,6 +1106,7 @@ void ShowMenu() {
         }
         if (checkedRate) CheckMenuRadioItem(rate, ID_METRIC_INTERVAL_FIRST, ID_METRIC_INTERVAL_FIRST + rateCount - 1, checkedRate, MF_BYCOMMAND);
         AppendMenuW(mm, MF_POPUP, (UINT_PTR)rate, T(L"Refresh rate"));
+        AppendMenuW(mm, MF_STRING | (g_groupTempsWithUsage ? MF_CHECKED : 0), ID_METRIC_GROUP, T(L"Group temperature with usage"));
         AppendMenuW(m, MF_POPUP, (UINT_PTR)mm, T(L"System metrics"));
     }
     AppendMenuW(m, MF_STRING | (g_wantWidget ? 0 : MF_GRAYED), ID_OFFSET_LEFT, T(L"Move left"));
@@ -1142,6 +1181,11 @@ void ShowMenu() {
         case ID_OFFSET_RESET: AdjustTaskbarOffset(0); break;
         case ID_TASKMGR: ShellExecuteW(nullptr, L"open", L"taskmgr.exe", nullptr, nullptr, SW_SHOWNORMAL); break;
         case ID_STACKED: SetStacked(!g_stacked); break;
+        case ID_METRIC_GROUP:
+            g_groupTempsWithUsage = !g_groupTempsWithUsage;
+            SaveGroupTempsWithUsage(g_groupTempsWithUsage);
+            UpdateWidget();
+            break;
         case ID_MODE_WIDGET: SetMode(true); break;
         case ID_MODE_TRAY: SetMode(false); break;
         case ID_SUPPORT: ShellExecuteW(nullptr, L"open", L"https://github.com/sponsors/krisgfx9", nullptr, nullptr, SW_SHOWNORMAL); break;
@@ -1539,6 +1583,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     g_recordHistory = LoadRecordHistory();
     g_widgetBackground = LoadWidgetBackground();
     g_brandColors = LoadBrandColors();
+    g_groupTempsWithUsage = LoadGroupTempsWithUsage();
     g_stacked = LoadStacked();
     g_pollIntervalMs = LoadPollSeconds() * 1000;
     LoadMetricsWhere();

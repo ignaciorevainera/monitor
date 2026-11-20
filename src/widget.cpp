@@ -501,11 +501,11 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
 
     int itemGap = compact ? Px(6) : Px(14);
     std::vector<Piece> out;
-    struct Slot { int icon, label, bolt, itemIdx; };  // indices of one device's pieces (-1 for more slot)
+    struct Slot { int icon, label, bolt, inlineTemp, itemIdx; };  // indices of one device's pieces (-1 for more slot)
     std::vector<Slot> slots;
     if (showMore) {
         size_t mg = out.size();
-        slots.push_back({ (int)mg, -1, -1, -1 });
+        slots.push_back({ (int)mg, -1, -1, -1, -1 });
         Piece more{ RenderMask(std::wstring(1, kMore), icons, g_light), fg, 220, itemGap };
         if (moreWidth) *moreWidth = more.m.w + itemGap;
         out.push_back(std::move(more));
@@ -525,8 +525,11 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
         int a = it.dim ? 120 : 255;
         Rgb tc = it.severity >= 2 ? critColor : it.severity == 1 ? warnColor : it.low ? red : fg;
         bool mark = it.charging || it.full;  // bolt while charging, green check mark once full
+        bool hasInline = !it.inlineTempText.empty();
         size_t glyph = out.size();
-        slots.push_back({ (int)glyph, (int)glyph + 1, mark ? (int)glyph + 2 : -1, (int)i });
+        int boltIdx = mark ? (int)glyph + 2 : -1;
+        int inlineIdx = hasInline ? (int)glyph + 2 + (mark ? 1 : 0) : -1;
+        slots.push_back({ (int)glyph, (int)glyph + 1, boltIdx, inlineIdx, (int)i });
         bool branded = it.accent != Accent::None;
         BrandColor bc = AccentColor(it.accent, g_light);
         Rgb accent{ bc.r, bc.g, bc.b };
@@ -539,7 +542,7 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
         int iw = icon.m.w + icon.gapAfter;
         out.push_back(std::move(icon));
         std::wstring t = !it.text.empty() ? it.text : it.percent >= 0 ? std::to_wstring(it.percent) + L"%" : L"?";
-        Piece label{ RenderMask(t, text, g_light), tc, a, mark ? Px(2) : 0 };
+        Piece label{ RenderMask(t, text, g_light), tc, a, mark ? Px(2) : (hasInline ? Px(4) : 0) };
         if (branded && it.percent >= 0) {
             label.barPct = it.percent;
             label.barColor = it.low ? red : accent;
@@ -547,9 +550,15 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
         iw += label.m.w + label.gapAfter;
         out.push_back(std::move(label));
         if (mark) {
-            Piece mp{ RenderMask(std::wstring(1, it.full ? kCheck : kBolt), bolt, g_light), it.full ? full : charge, a, 0 };
-            iw += mp.m.w;
+            Piece mp{ RenderMask(std::wstring(1, it.full ? kCheck : kBolt), bolt, g_light), it.full ? full : charge, a, hasInline ? Px(4) : 0 };
+            iw += mp.m.w + mp.gapAfter;
             out.push_back(std::move(mp));
+        }
+        if (hasInline) {
+            Rgb itc = it.inlineTempSeverity >= 2 ? critColor : it.inlineTempSeverity == 1 ? warnColor : fg;
+            Piece ip{ RenderMask(it.inlineTempText, text, g_light), itc, a, 0 };
+            iw += ip.m.w;
+            out.push_back(std::move(ip));
         }
         int gap = i < lastVisible ? itemGap : 0;
         out.back().gapAfter = gap;
@@ -589,14 +598,22 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
             }
             Piece& lb = out[s.label];
             int boltW = s.bolt >= 0 ? Px(2) + out[s.bolt].m.w : 0;
+            int inlineW = s.inlineTemp >= 0 ? Px(4) + out[s.inlineTemp].m.w : 0;
+            int rowW = lb.m.w + boltW + inlineW;
             ic.px = (barW - ic.m.w) / 2;
             ic.py = y;
             y += ic.m.h + rowGap;
-            lb.px = (barW - lb.m.w - boltW) / 2;
+            lb.px = (barW - rowW) / 2;
             lb.py = y;
+            int rx = lb.px + lb.m.w;
             if (s.bolt >= 0) {
-                out[s.bolt].px = lb.px + lb.m.w + Px(2);
+                out[s.bolt].px = rx + Px(2);
                 out[s.bolt].py = y + (lb.m.h - out[s.bolt].m.h) / 2;
+                rx += boltW;
+            }
+            if (s.inlineTemp >= 0) {
+                out[s.inlineTemp].px = rx + Px(4);
+                out[s.inlineTemp].py = y + (lb.m.h - out[s.inlineTemp].m.h) / 2;
             }
             y += lb.m.h + (lb.barPct >= 0 ? barRoom : 0) + itemGap;
         }
@@ -617,7 +634,9 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
             }
             Piece& lb = out[s.label];
             int boltW = s.bolt >= 0 ? Px(2) + out[s.bolt].m.w : 0;
-            int slotW = std::max(ic.m.w + boltW, lb.m.w);
+            int inlineW = s.inlineTemp >= 0 ? Px(4) + out[s.inlineTemp].m.w : 0;
+            int textW = lb.m.w + inlineW;
+            int slotW = std::max(ic.m.w + boltW, textW);
             if (itemWidths && s.itemIdx >= 0) (*itemWidths)[s.itemIdx] = slotW + itemGap;
             ic.px = x + (slotW - ic.m.w - boltW) / 2;
             ic.py = top + (iconH - ic.m.h) / 2;
@@ -625,8 +644,12 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
                 out[s.bolt].px = ic.px + ic.m.w + Px(2);
                 out[s.bolt].py = top + (iconH - out[s.bolt].m.h) / 2;
             }
-            lb.px = x + (slotW - lb.m.w) / 2;
+            lb.px = x + (slotW - textW) / 2;
             lb.py = top + iconH + rowGap;
+            if (s.inlineTemp >= 0) {
+                out[s.inlineTemp].px = lb.px + lb.m.w + Px(4);
+                out[s.inlineTemp].py = top + iconH + rowGap + (lb.m.h - out[s.inlineTemp].m.h) / 2;
+            }
             x += slotW + itemGap;
         }
         width = x - itemGap + Px(8);
@@ -664,7 +687,8 @@ bool SameItems(const std::vector<WidgetItem>& a, const std::vector<WidgetItem>& 
             x.charging != y.charging || x.full != y.full || x.dim != y.dim ||
             x.low != y.low || x.bluetooth != y.bluetooth || x.label != y.label ||
             x.accent != y.accent || x.metric != y.metric || x.glyphOverride != y.glyphOverride ||
-            x.name != y.name || x.severity != y.severity)
+            x.name != y.name || x.severity != y.severity ||
+            x.inlineTempText != y.inlineTempText || x.inlineTempSeverity != y.inlineTempSeverity)
             return false;
     }
     return true;

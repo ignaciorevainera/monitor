@@ -114,5 +114,6 @@ Taskbar = Barra de tareas
 Notification area = Área de notificación
 Hidden = Oculto
 Refresh rate = Frecuencia de actualización
+Group temperature with usage = Agrupar temperatura con uso
 Reset position = Restablecer posición
 Open Task Manager = Abrir Administrador de tareas
