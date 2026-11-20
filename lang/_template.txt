@@ -217,9 +217,13 @@ Monitor will close briefly while the update is installed. =
 # System metrics
 System metrics = 
 CPU usage = 
+CPU temperature = 
 RAM usage = 
 GPU usage = 
+GPU temperature = 
 VRAM = 
+SSD temperature = 
+Thermal zone reading, not a CPU die sensor = 
 Taskbar = 
 Notification area = 
 Hidden = 
