@@ -67,7 +67,8 @@ Expected: última línea `Built BatteryHub.exe`. Si falla, parar: el baseline no
 
 Run:
 ```powershell
-C:\msys64\usr\bin\bash.exe -lc "export MSYSTEM=MINGW64; cd '/c/Users/Ignacio Revainera/dev/battery-monitor' && make test"
+$env:MSYSTEM = "MINGW64"   # before bash starts: /etc/profile builds PATH from it
+C:\msys64\usr\bin\bash.exe -lc "cd '/c/Users/Ignacio Revainera/dev/battery-monitor' && make test"
 ```
 Expected: todos los tests compilan y pasan. Guardar el nombre de cualquier test que falle ANTES de modificar algo — esos fallos no son culpa de las etapas.
 
