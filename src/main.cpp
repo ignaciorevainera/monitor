@@ -27,12 +27,15 @@
 #include "widget.h"
 #include "update_win.h"
 #include "update_apply.h"
+#include "metrics/metrics.h"
 
 namespace {
 
 constexpr UINT WM_TRAY = WM_APP + 1;
 constexpr UINT WM_RESULTS = WM_APP + 2;
 constexpr UINT WM_WIDGET_CLICK = WM_APP + 3;
+constexpr UINT WM_METRICS = WM_APP + 4;
+constexpr GUID kConsoleDisplayState = { 0x6fe69556, 0x704a, 0x47a0, { 0x8f, 0x24, 0xc2, 0x8d, 0x93, 0x6f, 0xda, 0x47 } };
 constexpr UINT_PTR TIMER_DEBOUNCE = 1;
 constexpr UINT_PTR TIMER_WIDGET = 2;
 constexpr UINT_PTR TIMER_ALERT_ICON = 3;
@@ -65,7 +68,9 @@ const wchar_t* kSettingsKey = L"Software\\WirelessBattery";
 
 HINSTANCE g_inst;
 HWND g_hwnd;
-HANDLE g_refreshEvt, g_stopEvt, g_worker;
+HANDLE g_refreshEvt, g_stopEvt, g_worker, g_metricWorker;
+metrics::Config g_metricCfg = metrics::kDefaultConfig;
+metrics::Snapshot g_metricSnap{};
 UINT g_taskbarCreatedMsg;
 bool g_lightTaskbar;
 bool g_wantWidget = true;      // user's choice: taskbar widget (default) or tray icons
@@ -1062,6 +1067,14 @@ LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             delete v;
             return 0;
         }
+        case WM_METRICS: {
+            auto* s = reinterpret_cast<metrics::Snapshot*>(lp);
+            if (s) {
+                g_metricSnap = *s;
+                delete s;
+            }
+            return 0;
+        }
         case WM_TRAY:
             switch (LOWORD(lp)) {
                 case WM_CONTEXTMENU:
@@ -1080,6 +1093,13 @@ LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             return TRUE;
         case WM_POWERBROADCAST:
             if (wp == PBT_APMRESUMEAUTOMATIC) RefreshSoon(5000);
+            if (wp == PBT_POWERSETTINGCHANGE && lp) {
+                const auto* ps = reinterpret_cast<const POWERBROADCAST_SETTING*>(lp);
+                if (IsEqualGUID(ps->PowerSetting, kConsoleDisplayState) && ps->DataLength >= sizeof(DWORD)) {
+                    DWORD state = *reinterpret_cast<const DWORD*>(ps->Data);
+                    metrics::SetSamplerPaused(state == 0);
+                }
+            }
             return TRUE;
         case WM_TIMER:
             if (wp == TIMER_DEBOUNCE) { KillTimer(h, TIMER_DEBOUNCE); SetEvent(g_refreshEvt); }
@@ -1102,7 +1122,9 @@ LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             if (g_alertIconAdded) { TrayDelete(ALERT_ICON_ID); g_alertIconAdded = false; }
             widget::Destroy();
             SetEvent(g_stopEvt);
+            metrics::StopSampler();
             if (g_worker) WaitForSingleObject(g_worker, 5000);
+            if (g_metricWorker) WaitForSingleObject(g_metricWorker, 5000);
             for (auto& [k, e] : g_entries) {
                 if (e.added) TrayDelete(e.uid);
                 if (e.icon) DestroyIcon(e.icon);
@@ -1211,6 +1233,32 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     if (applyResult >= 0) return applyResult;
     if (cmdLine && wcsstr(cmdLine, L"--list")) return ListToConsole(false);
     if (cmdLine && wcsstr(cmdLine, L"--dump")) return ListToConsole(true);
+    if (cmdLine && wcsstr(cmdLine, L"--metrics-dump")) {
+        metrics::Snapshot snap{};
+        metrics::TakeSnapshot(snap);
+        HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+        if (!out || out == INVALID_HANDLE_VALUE) {
+            if (AttachConsole(ATTACH_PARENT_PROCESS)) out = CreateFileW(L"CONOUT$", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+        }
+        if (out && out != INVALID_HANDLE_VALUE) {
+            std::string line;
+            auto add = [&](const char* key, metrics::Id id) {
+                int idx = static_cast<int>(id);
+                if (!snap.ok[idx]) return;
+                char buf[64];
+                std::snprintf(buf, sizeof(buf), "%s%s=%.1f", line.empty() ? "" : " ", key, snap.val[idx]);
+                line += buf;
+            };
+            add("cpu", metrics::Id::CpuUsage);
+            add("ram", metrics::Id::RamUsage);
+            add("gpu", metrics::Id::GpuUsage);
+            add("vram", metrics::Id::Vram);
+            line += "\r\n";
+            DWORD w = 0;
+            WriteFile(out, line.data(), static_cast<DWORD>(line.size()), &w, nullptr);
+        }
+        return 0;
+    }
     if (cmdLine && wcsstr(cmdLine, L"--report")) {  // the "Request support for a device" window on its own
         i18n::Init();
         report::Show(inst, nullptr);
@@ -1259,6 +1307,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     filter.dbcc_devicetype = DBT_DEVTYP_DEVICEINTERFACE;
     filter.dbcc_classguid = GUID_DEVINTERFACE_HID;
     HDEVNOTIFY notify = RegisterDeviceNotificationW(g_hwnd, &filter, DEVICE_NOTIFY_WINDOW_HANDLE);
+    HPOWERNOTIFY powerNotify = RegisterPowerSettingNotification(g_hwnd, &kConsoleDisplayState, DEVICE_NOTIFY_WINDOW_HANDLE);
 
     g_refreshEvt = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     g_stopEvt = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -1284,6 +1333,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     UpdatePlaceholder();  // something to click on until the first poll finishes
     SetTimer(g_hwnd, TIMER_WIDGET, 1000, nullptr);
     g_worker = CreateThread(nullptr, 0, Worker, nullptr, 0, nullptr);
+    metrics::SetSamplerTarget(g_hwnd, WM_METRICS);
+    metrics::SetSamplerInterval(5000);
+    g_metricWorker = CreateThread(nullptr, 0, metrics::MetricsWorker, nullptr, 0, nullptr);
 
     MSG m;
     while (GetMessageW(&m, nullptr, 0, 0) > 0) {
@@ -1293,7 +1345,10 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     }
     // drain results posted after shutdown started
     while (PeekMessageW(&m, nullptr, WM_RESULTS, WM_RESULTS, PM_REMOVE)) delete reinterpret_cast<std::vector<DeviceStatus>*>(m.lParam);
+    while (PeekMessageW(&m, nullptr, WM_METRICS, WM_METRICS, PM_REMOVE)) delete reinterpret_cast<metrics::Snapshot*>(m.lParam);
+    if (powerNotify) UnregisterPowerSettingNotification(powerNotify);
     if (notify) UnregisterDeviceNotification(notify);
+    if (g_metricWorker) CloseHandle(g_metricWorker);
     if (g_worker) CloseHandle(g_worker);
     ReleaseMutex(mutex);
     return 0;

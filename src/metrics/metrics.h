@@ -30,4 +30,11 @@ std::wstring FormatPercent(double v, bool ok);
 bool ParseConfig(const uint8_t* data, size_t bytes, Config& out);
 bool SameValues(const Snapshot& a, const Snapshot& b);
 
+bool TakeSnapshot(Snapshot& out);
+void SetSamplerTarget(void* hwnd, unsigned int msg);
+void SetSamplerPaused(bool paused);
+void SetSamplerInterval(unsigned long ms);
+void StopSampler();
+unsigned long __stdcall MetricsWorker(void* unused);
+
 }  // namespace metrics
