@@ -117,6 +117,8 @@ Select-String -Path src/*.cpp,src/*.h -Pattern 'WirelessBattery'          # -> m
 Select-String -Path src/update_core.h,src/update_core.cpp,src/update_win.cpp -Pattern 'ignaciorevainera/monitor','Monitor-Setup-'   # -> presentes; 'krisgfx9' ausente en src/
 ```
 
+Además: re-correr la suite completa (`make test` con la invocación de la Tarea 1) **antes** del commit — los fixtures de test pueden referenciar nombres renombrados (CI lo cobra si no).
+
 - [ ] **Step 5: Commit**
 
 ```bash
