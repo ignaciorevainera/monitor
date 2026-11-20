@@ -1,25 +1,19 @@
-# BatteryHub
+# Monitor
 
-*Formerly **Wireless Battery**. Version 1.1.0 renamed the app; an update keeps your settings, startup choice and battery history.*
+*Formerly **Wireless Battery**. An update keeps your settings, startup choice and battery history.*
 
-[![Support me on Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20me-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/krisgfx)
-[![Donate with PayPal](https://img.shields.io/badge/PayPal-Donate-00457C?logo=paypal&logoColor=white)](https://www.paypal.com/paypalme/krisgfx)
-[![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/krisgfx9)
-[![Join our Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/ZgDDUPP8ye)
-[![Star on GitHub](https://img.shields.io/github/stars/krisgfx9/Wireless-Device-Battery-Monitor?style=flat&logo=github&label=Star)](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor)
-[![Share on Reddit](https://img.shields.io/badge/Reddit-Share-FF4500?logo=reddit&logoColor=white)](https://www.reddit.com/submit?url=https%3A%2F%2Fgithub.com%2Fkrisgfx9%2FWireless-Device-Battery-Monitor&title=Wireless%20Battery%3A%20battery%20levels%20of%20your%20wireless%20devices%20on%20the%20Windows%20taskbar)
-[![Report a device](https://img.shields.io/badge/Report-a%20device-2EA44F?logo=github&logoColor=white)](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor/issues/new)
-[![Help translate](https://img.shields.io/badge/Help-translate-6F42C1?logo=googletranslate&logoColor=white)](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor/pull/129)
+[![Star on GitHub](https://img.shields.io/github/stars/ignaciorevainera/monitor?style=flat&logo=github&label=Star)](https://github.com/ignaciorevainera/monitor)
+[![Report a device](https://img.shields.io/badge/Report-a%20device-2EA44F?logo=github&logoColor=white)](https://github.com/ignaciorevainera/monitor/issues/new)
 
 Battery levels of your wireless mouse, headset, keyboard and controller, right on the Windows taskbar.
 
-![BatteryHub on the taskbar](docs/screenshot.png)
+![Monitor on the taskbar](docs/screenshot.png)
 
-> **Just want it working?** Download **[BatteryHub-Setup](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor/releases/latest)** from the latest release, run it and click through. That's it.
+> **Just want it working?** Download **[Monitor-Setup](https://github.com/ignaciorevainera/monitor/releases/latest)** from the latest release, run it and click through. That's it.
 >
 > **Experienced users** can grab the portable zip, use the [command-line options](#command-line), or [build it from source](#build) with `make` or `build.bat`.
 >
-> **Like it?** BatteryHub is free and open source. If it saves you a trip into vendor software, you can support it on [Ko-fi](https://ko-fi.com/krisgfx), [PayPal](https://www.paypal.com/paypalme/krisgfx) or [GitHub Sponsors](https://github.com/sponsors/krisgfx9). It helps me keep my apps free alongside my studies. Not able to donate? A ⭐ star, sharing it, or reporting an unsupported device with a `--dump` helps just as much.
+> **Like it?** Monitor is free and open source. A ⭐ star, sharing it, or reporting an unsupported device with a `--dump` helps just as much.
 
 - **Tiny**: a ~350 KB app using about 2 MB of RAM. It's plain C++/Win32, with no runtime and no background service, and installs in seconds without admin rights.
 - **No vendor software needed**: it talks to the devices directly. G HUB, Synapse, iCUE, GG and NGenuity can stay closed (or keep running; they don't conflict).
@@ -233,15 +227,15 @@ Also hardware-tested: RAWM Leviathan V4 (RAWM HS Receiver `1915:2346`; battery l
 
 ## Install
 
-[![Latest version](https://img.shields.io/github/v/release/krisgfx9/Wireless-Device-Battery-Monitor?label=latest%20version&style=for-the-badge)](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor/releases/latest)
+[![Latest version](https://img.shields.io/github/v/release/ignaciorevainera/monitor?label=latest%20version&style=for-the-badge)](https://github.com/ignaciorevainera/monitor/releases/latest)
 
-1. Download **`BatteryHub-Setup-<version>.exe`** from the [latest release](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor/releases/latest).
+1. Download **`Monitor-Setup-<version>.exe`** from the [latest release](https://github.com/ignaciorevainera/monitor/releases/latest).
 2. Run it and click through. It needs **no administrator rights** and **nothing else installed**: no
    runtimes, no drivers, no vendor apps. HeadsetControl comes bundled.
 
 The installer adds a Start menu entry and an uninstaller (*Settings → Apps*), and can start the app
-when you sign in. Prefer no installer? Download `BatteryHub-<version>-portable.zip`, unzip it
-anywhere and run `BatteryHub.exe`.
+when you sign in. Prefer no installer? Download `Monitor-<version>-portable.zip`, unzip it
+anywhere and run `Monitor.exe`.
 
 **Notes:**
 - **SmartScreen warning:** the exe is not code-signed, so Windows may say "Windows protected your PC". Click *More info → Run anyway*, or build it yourself.
@@ -285,16 +279,16 @@ automatic replacement of portable copies are deferred.
 ## Command line
 
 ```
-BatteryHub.exe --list     # print every device and its battery level, then exit
-BatteryHub.exe --json     # print a JSON array of devices and battery levels, then exit
-BatteryHub.exe --dump     # every HID collection, HID devices that could not be opened, all USB devices (also ones
-                               # without a HID interface) and Bluetooth devices; also saved to %TEMP%\BatteryHub-dump.txt
-BatteryHub.exe --report   # open the "Request support for a device" window
-BatteryHub.exe --demo     # sample devices of every brand instead of real ones (screenshots, checking colors)
-BatteryHub.exe --quit     # close the running instance
+Monitor.exe --list     # print every device and its battery level, then exit
+Monitor.exe --json     # print a JSON array of devices and battery levels, then exit
+Monitor.exe --dump     # every HID collection, HID devices that could not be opened, all USB devices (also ones
+                               # without a HID interface) and Bluetooth devices; also saved to %TEMP%\Monitor-dump.txt
+Monitor.exe --report   # open the "Request support for a device" window
+Monitor.exe --demo     # sample devices of every brand instead of real ones (screenshots, checking colors)
+Monitor.exe --quit     # close the running instance
 ```
 
-The Linux build uses the same flags with `wireless-battery` instead of `BatteryHub.exe`, and
+The Linux build uses the same flags with `wireless-battery` instead of `Monitor.exe`, and
 also accepts `--help`. `--json` prints a stable array that scripts and bar widgets can parse:
 
 ```json
@@ -338,7 +332,7 @@ Windows builds also need PowerShell for generating the shared executable/resourc
 The official repository's version tags build with `CHANNEL=stable`; local builds default to
 `dev`. Forks and pull requests do not enable official updates automatically.
 
-`BatteryHub.exe` on its own also works. Without `headsetcontrol.exe` next to it (or on `PATH`) you
+`Monitor.exe` on its own also works. Without `headsetcontrol.exe` next to it (or on `PATH`) you
 just lose the extra headsets.
 
 ## Linux (experimental)
