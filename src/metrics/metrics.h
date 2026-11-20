@@ -21,12 +21,14 @@ struct Config {
 };
 
 inline constexpr Config kDefaultConfig = { {
-    Where::Bar, Where::Hidden, Where::Bar, Where::Bar, Where::Hidden, Where::Bar, Where::Hidden
+    Where::Bar, Where::Bar, Where::Bar, Where::Bar, Where::Bar, Where::Bar, Where::Hidden
 } };
 
 inline constexpr uint32_t kTrayUidBase = 0x2000;
 
 std::wstring FormatPercent(double v, bool ok);
+std::wstring FormatTemp(double c, bool ok);
+int SeverityFor(int metric, double c);
 bool ParseConfig(const uint8_t* data, size_t bytes, Config& out);
 bool SameValues(const Snapshot& a, const Snapshot& b);
 

@@ -14,6 +14,41 @@ int main() {
     assert(FormatPercent(120.0, true) == L"100%");
     assert(FormatPercent(42.0, false) == L"--");
 
+    assert(FormatTemp(54.4, true) == L"54\u00B0");
+    assert(FormatTemp(54.6, true) == L"55\u00B0");
+    assert(FormatTemp(0.0, true) == L"0\u00B0");
+    assert(FormatTemp(42.0, false) == L"--");
+
+    assert(SeverityFor(static_cast<int>(Id::CpuTemp), 79.9) == 0);
+    assert(SeverityFor(static_cast<int>(Id::CpuTemp), 80.0) == 1);
+    assert(SeverityFor(static_cast<int>(Id::CpuTemp), 89.9) == 1);
+    assert(SeverityFor(static_cast<int>(Id::CpuTemp), 90.0) == 2);
+
+    assert(SeverityFor(static_cast<int>(Id::GpuTemp), 79.9) == 0);
+    assert(SeverityFor(static_cast<int>(Id::GpuTemp), 80.0) == 1);
+    assert(SeverityFor(static_cast<int>(Id::GpuTemp), 89.9) == 1);
+    assert(SeverityFor(static_cast<int>(Id::GpuTemp), 90.0) == 2);
+
+    assert(SeverityFor(static_cast<int>(Id::SsdTemp), 64.9) == 0);
+    assert(SeverityFor(static_cast<int>(Id::SsdTemp), 65.0) == 1);
+    assert(SeverityFor(static_cast<int>(Id::SsdTemp), 74.9) == 1);
+    assert(SeverityFor(static_cast<int>(Id::SsdTemp), 75.0) == 2);
+
+    assert(SeverityFor(static_cast<int>(Id::CpuUsage), 100.0) == 0);
+    assert(SeverityFor(static_cast<int>(Id::RamUsage), 100.0) == 0);
+    assert(SeverityFor(static_cast<int>(Id::GpuUsage), 100.0) == 0);
+    assert(SeverityFor(static_cast<int>(Id::Vram), 100.0) == 0);
+    assert(SeverityFor(-1, 100.0) == 0);
+    assert(SeverityFor(99, 100.0) == 0);
+
+    assert(kDefaultConfig.where[static_cast<int>(Id::CpuUsage)] == Where::Bar);
+    assert(kDefaultConfig.where[static_cast<int>(Id::CpuTemp)] == Where::Bar);
+    assert(kDefaultConfig.where[static_cast<int>(Id::RamUsage)] == Where::Bar);
+    assert(kDefaultConfig.where[static_cast<int>(Id::GpuUsage)] == Where::Bar);
+    assert(kDefaultConfig.where[static_cast<int>(Id::GpuTemp)] == Where::Bar);
+    assert(kDefaultConfig.where[static_cast<int>(Id::Vram)] == Where::Bar);
+    assert(kDefaultConfig.where[static_cast<int>(Id::SsdTemp)] == Where::Hidden);
+
     Config cfg{};
     const uint8_t valid[7] = {
         static_cast<uint8_t>(Where::Tray),
