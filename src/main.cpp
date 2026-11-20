@@ -623,7 +623,9 @@ void ApplyMetricTray(int id) {
     if (!spec) return;
     MetricTrayEntry& e = g_metricTray[id];
     UINT uid = metrics::kTrayUidBase + static_cast<UINT>(id);
-    if (g_metricCfg.where[id] != metrics::Where::Tray) {
+    metrics::Where where = g_metricCfg.where[id];
+    bool showInTray = !g_useWidget ? (where != metrics::Where::Hidden) : (where == metrics::Where::Tray);
+    if (!showInTray) {
         if (e.added) {
             TrayDelete(uid);
             e.added = false;
@@ -811,6 +813,7 @@ void Reconcile() {
     g_useWidget = alive;
     if (changed) {
         for (auto& [k, e] : g_entries) ApplyEntry(e);
+        ApplyAllMetricTray();
         UpdatePlaceholder();
         UpdateWidget();
     } else if (g_useWidget) {
