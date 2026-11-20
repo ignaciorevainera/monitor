@@ -72,6 +72,25 @@ HANDLE g_refreshEvt, g_stopEvt, g_worker, g_metricWorker;
 metrics::Config g_metricCfg = metrics::kDefaultConfig;
 metrics::Snapshot g_metricSnap{};
 bool g_hasMetricSnap = false;
+struct MetricTrayEntry {
+    bool added = false;
+    HICON icon = nullptr;
+    std::wstring iconSig;
+};
+MetricTrayEntry g_metricTray[metrics::kCount]{};
+
+struct MetricSpec {
+    metrics::Id id;
+    wchar_t glyph;
+    const wchar_t* name;
+    const wchar_t* label;
+};
+constexpr MetricSpec kE1Metrics[] = {
+    { metrics::Id::CpuUsage, 0xEEA1, L"CPU usage", nullptr },
+    { metrics::Id::RamUsage, 0xEEA0, L"RAM usage", nullptr },
+    { metrics::Id::GpuUsage, 0xE950, L"GPU usage", nullptr },
+    { metrics::Id::Vram,     0xEEA0, L"VRAM",      L"V" },
+};
 UINT g_taskbarCreatedMsg;
 bool g_lightTaskbar;
 bool g_wantWidget = true;      // user's choice: taskbar widget (default) or tray icons
@@ -545,6 +564,45 @@ void ApplyEntry(TrayEntry& e) {
     e.added = true;
 }
 
+const MetricSpec* FindMetricSpec(int id) {
+    for (const auto& m : kE1Metrics) {
+        if (static_cast<int>(m.id) == id) return &m;
+    }
+    return nullptr;
+}
+
+void ApplyMetricTray(int id) {
+    if (id < 0 || id >= metrics::kCount) return;
+    const MetricSpec* spec = FindMetricSpec(id);
+    if (!spec) return;
+    MetricTrayEntry& e = g_metricTray[id];
+    UINT uid = metrics::kTrayUidBase + static_cast<UINT>(id);
+    if (g_metricCfg.where[id] != metrics::Where::Tray) {
+        if (e.added) {
+            TrayDelete(uid);
+            e.added = false;
+        }
+        return;
+    }
+    bool ok = g_hasMetricSnap && g_metricSnap.ok[id];
+    int pct = ok ? std::clamp(static_cast<int>(g_metricSnap.val[id] + 0.5), 0, 100) : -1;
+    std::wstring sig = std::to_wstring(pct) + (ok ? L"1" : L"0") + (g_lightTaskbar ? L"l" : L"k");
+    if (sig != e.iconSig || !e.icon) {
+        if (e.icon) DestroyIcon(e.icon);
+        std::wstring shortVal = ok ? std::to_wstring(pct) : L"--";
+        Rgb fg = Foreground();
+        e.icon = RenderIcon(shortVal, pct, fg, fg, !ok);
+        e.iconSig = sig;
+    }
+    std::wstring tip = std::wstring(T(spec->name)) + L": " + metrics::FormatPercent(g_metricSnap.val[id], ok);
+    TrayCall(e.added ? NIM_MODIFY : NIM_ADD, uid, e.icon, tip);
+    e.added = true;
+}
+
+void ApplyAllMetricTray() {
+    for (const auto& m : kE1Metrics) ApplyMetricTray(static_cast<int>(m.id));
+}
+
 int KindOrder(DeviceKind k) {  // default order: headset first, then mouse, ...
     switch (k) {
         case DeviceKind::Headset:  return 0;
@@ -588,19 +646,7 @@ void UpdateWidget() {
     std::vector<std::wstring> labels = ShortLabels(labelIn, 3);
     std::vector<WidgetItem> items;
     std::wstring tip;
-    struct MetricSpec {
-        metrics::Id id;
-        wchar_t glyph;
-        const wchar_t* name;
-        const wchar_t* label;
-    };
-    static constexpr MetricSpec kMetrics[] = {
-        { metrics::Id::CpuUsage, 0xEEA1, L"CPU usage", nullptr },
-        { metrics::Id::RamUsage, 0xEEA0, L"RAM usage", nullptr },
-        { metrics::Id::GpuUsage, 0xE950, L"GPU usage", nullptr },
-        { metrics::Id::Vram,     0xEEA0, L"VRAM",      L"V" },
-    };
-    for (const auto& m : kMetrics) {
+    for (const auto& m : kE1Metrics) {
         int idx = static_cast<int>(m.id);
         if (g_metricCfg.where[idx] != metrics::Where::Bar) continue;
         bool ok = g_hasMetricSnap && g_metricSnap.ok[idx];
@@ -732,6 +778,11 @@ void SetShowDisconnectedDevices(bool on) {
 void ReAddAll() {
     g_placeholder = false;
     for (auto& [k, e] : g_entries) { e.added = false; ApplyEntry(e); }
+    for (const auto& m : kE1Metrics) {
+        int id = static_cast<int>(m.id);
+        g_metricTray[id].added = false;
+        ApplyMetricTray(id);
+    }
     UpdatePlaceholder();
 }
 
@@ -750,6 +801,11 @@ void RedrawAll() {
         if (g_placeholder) { TrayDelete(PLACEHOLDER_ID); g_placeholder = false; }
     }
     for (auto& [k, e] : g_entries) { e.iconSig.clear(); ApplyEntry(e); }
+    for (const auto& m : kE1Metrics) {
+        int id = static_cast<int>(m.id);
+        g_metricTray[id].iconSig.clear();
+        ApplyMetricTray(id);
+    }
     UpdatePlaceholder();
 }
 
@@ -1103,7 +1159,10 @@ LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
                 g_metricSnap = *s;
                 g_hasMetricSnap = true;
                 delete s;
-                if (changed) UpdateWidget();
+                if (changed) {
+                    UpdateWidget();
+                    ApplyAllMetricTray();
+                }
             }
             return 0;
         }
@@ -1160,6 +1219,11 @@ LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
             for (auto& [k, e] : g_entries) {
                 if (e.added) TrayDelete(e.uid);
                 if (e.icon) DestroyIcon(e.icon);
+            }
+            for (const auto& m : kE1Metrics) {
+                int id = static_cast<int>(m.id);
+                if (g_metricTray[id].added) TrayDelete(metrics::kTrayUidBase + static_cast<UINT>(id));
+                if (g_metricTray[id].icon) DestroyIcon(g_metricTray[id].icon);
             }
             if (g_placeholder) TrayDelete(PLACEHOLDER_ID);
             PostQuitMessage(0);
@@ -1362,6 +1426,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     LoadAlertThresholds();
     battery_history::Initialize(g_demo);
     Reconcile();
+    ApplyAllMetricTray();
     UpdatePlaceholder();  // something to click on until the first poll finishes
     SetTimer(g_hwnd, TIMER_WIDGET, 1000, nullptr);
     g_worker = CreateThread(nullptr, 0, Worker, nullptr, 0, nullptr);
