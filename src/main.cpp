@@ -1160,8 +1160,9 @@ void ShowMenu() {
     POINT pt;
     GetCursorPos(&pt);
     SetForegroundWindow(g_hwnd);
-    UINT cmd = TrackPopupMenu(m, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON | (i18n::Rtl() ? TPM_LAYOUTRTL : 0), pt.x, pt.y, 0,
-                              g_hwnd, nullptr);
+    UINT cmd = TrackPopupMenu(
+        m, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | (i18n::Rtl() ? TPM_LAYOUTRTL : 0), pt.x,
+        pt.y, 0, g_hwnd, nullptr);
     PostMessageW(g_hwnd, WM_NULL, 0, 0);
     DestroyMenu(m);
     switch (cmd) {
