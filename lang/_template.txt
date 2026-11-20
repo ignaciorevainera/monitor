@@ -213,3 +213,16 @@ Monitor could not reopen. Please start it manually or repair the installation. =
 Monitor is up to date. = 
 Monitor update = 
 Monitor will close briefly while the update is installed. = 
+
+# System metrics
+System metrics = 
+CPU usage = 
+RAM usage = 
+GPU usage = 
+VRAM = 
+Taskbar = 
+Notification area = 
+Hidden = 
+Refresh rate = 
+Reset position = 
+Open Task Manager = 

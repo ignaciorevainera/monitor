@@ -49,7 +49,10 @@ constexpr UINT ALERT_ICON_ID = 2;
 enum MenuId : UINT {
     ID_REFRESH = 100, ID_AUTOSTART, ID_HIDE_LAST_KNOWN, ID_WIDGET_BACKGROUND, ID_EXIT, ID_MODE_WIDGET, ID_MODE_TRAY, ID_SUPPORT, ID_REPORT,
     ID_BRAND_COLORS, ID_STACKED, ID_SHOW_DISCONNECTED, ID_RECORD_HISTORY,
+    ID_OFFSET_LEFT, ID_OFFSET_RIGHT, ID_OFFSET_RESET, ID_TASKMGR,
     ID_POLL_FIRST = 500,  // "Check battery every": ID_POLL_FIRST + 0..7
+    ID_METRIC_INTERVAL_FIRST = 600,  // "Refresh rate": ID_METRIC_INTERVAL_FIRST + 0..2
+    ID_METRIC_WHERE_FIRST = 700,     // per-metric location: ID_METRIC_WHERE_FIRST + id * 4 + where
     ID_UPDATE = 200, ID_AUTO_UPDATE,
     ID_LANG_AUTO = 400, ID_LANG_ADD, ID_LANG_FIRST,  // "Language": ID_LANG_FIRST + 0..63
     ID_MONITOR_ALL = 300, ID_MONITOR_MAIN, ID_MONITOR_FIRST,  // "Show the widget on": ID_MONITOR_FIRST + 0..31
@@ -69,6 +72,8 @@ const wchar_t* kSettingsKey = L"Software\\WirelessBattery";
 HINSTANCE g_inst;
 HWND g_hwnd;
 HANDLE g_refreshEvt, g_stopEvt, g_worker, g_metricWorker;
+constexpr DWORD METRIC_POLL_SECONDS[] = { 1, 2, 5 };
+DWORD g_metricIntervalMs = 5000;
 metrics::Config g_metricCfg = metrics::kDefaultConfig;
 metrics::Snapshot g_metricSnap{};
 bool g_hasMetricSnap = false;
@@ -316,6 +321,43 @@ DWORD LoadPollSeconds() {
 }
 void SavePollSeconds(DWORD seconds) {
     RegSetKeyValueW(HKEY_CURRENT_USER, kSettingsKey, L"PollIntervalSeconds", REG_DWORD, &seconds, sizeof(seconds));
+}
+
+void LoadMetricsWhere() {
+    uint8_t buf[32]{};
+    DWORD sz = sizeof(buf);
+    if (RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, L"MetricsWhere", RRF_RT_REG_BINARY, nullptr, buf, &sz) == ERROR_SUCCESS) {
+        metrics::ParseConfig(buf, sz, g_metricCfg);
+    } else {
+        g_metricCfg = metrics::kDefaultConfig;
+    }
+}
+
+void SaveMetricsWhere() {
+    RegSetKeyValueW(HKEY_CURRENT_USER, kSettingsKey, L"MetricsWhere", REG_BINARY,
+                    g_metricCfg.where, static_cast<DWORD>(sizeof(g_metricCfg.where)));
+}
+
+DWORD LoadMetricIntervalMs() {
+    DWORD v = 5000, sz = sizeof(v);
+    RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, L"MetricIntervalMs", RRF_RT_REG_DWORD, nullptr, &v, &sz);
+    return std::clamp<DWORD>(v, 1000, 5000);
+}
+
+void SaveMetricIntervalMs(DWORD ms) {
+    RegSetKeyValueW(HKEY_CURRENT_USER, kSettingsKey, L"MetricIntervalMs", REG_DWORD, &ms, sizeof(ms));
+}
+
+void AdjustTaskbarOffset(int delta) {
+    DWORD raw = 0, sz = sizeof(raw);
+    int offset = 0;
+    if (RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, L"TaskbarOffset", RRF_RT_REG_DWORD, nullptr, &raw, &sz) == ERROR_SUCCESS) {
+        offset = static_cast<int>(raw);
+    }
+    offset = delta == 0 ? 0 : std::clamp(offset + delta, -2000, 2000);
+    DWORD out = static_cast<DWORD>(offset);
+    RegSetKeyValueW(HKEY_CURRENT_USER, kSettingsKey, L"TaskbarOffset", REG_DWORD, &out, sizeof(out));
+    widget::Reposition();
 }
 
 bool AutostartEnabled() {
@@ -970,6 +1012,35 @@ void ShowMenu() {
         AppendMenuW(m, MF_POPUP | (g_wantWidget ? 0 : MF_GRAYED), (UINT_PTR)sub, T(L"Show the widget on"));
     }
     AppendMenuW(m, MF_STRING | (g_brandColors ? MF_CHECKED : 0), ID_BRAND_COLORS, T(L"Brand colors (Razer green, Logitech blue, ...)"));
+    {
+        HMENU mm = CreatePopupMenu();
+        for (const auto& ms : kE1Metrics) {
+            int id = static_cast<int>(ms.id);
+            HMENU loc = CreatePopupMenu();
+            UINT base = ID_METRIC_WHERE_FIRST + static_cast<UINT>(id) * 4;
+            AppendMenuW(loc, MF_STRING, base + static_cast<UINT>(metrics::Where::Bar), T(L"Taskbar"));
+            AppendMenuW(loc, MF_STRING, base + static_cast<UINT>(metrics::Where::Tray), T(L"Notification area"));
+            AppendMenuW(loc, MF_STRING, base + static_cast<UINT>(metrics::Where::Hidden), T(L"Hidden"));
+            CheckMenuRadioItem(loc, base, base + 2, base + static_cast<UINT>(g_metricCfg.where[id]), MF_BYCOMMAND);
+            AppendMenuW(mm, MF_POPUP, (UINT_PTR)loc, T(ms.name));
+        }
+        AppendMenuW(mm, MF_SEPARATOR, 0, nullptr);
+        HMENU rate = CreatePopupMenu();
+        UINT checkedRate = 0;
+        const UINT rateCount = ARRAYSIZE(METRIC_POLL_SECONDS);
+        for (UINT i = 0; i < rateCount; i++) {
+            DWORD s = METRIC_POLL_SECONDS[i];
+            std::wstring label = TF(L"{seconds} s", { { L"seconds", std::to_wstring(s) } });
+            AppendMenuW(rate, MF_STRING, ID_METRIC_INTERVAL_FIRST + i, label.c_str());
+            if (s * 1000 == g_metricIntervalMs) checkedRate = ID_METRIC_INTERVAL_FIRST + i;
+        }
+        if (checkedRate) CheckMenuRadioItem(rate, ID_METRIC_INTERVAL_FIRST, ID_METRIC_INTERVAL_FIRST + rateCount - 1, checkedRate, MF_BYCOMMAND);
+        AppendMenuW(mm, MF_POPUP, (UINT_PTR)rate, T(L"Refresh rate"));
+        AppendMenuW(m, MF_POPUP, (UINT_PTR)mm, T(L"System metrics"));
+    }
+    AppendMenuW(m, MF_STRING | (g_wantWidget ? 0 : MF_GRAYED), ID_OFFSET_LEFT, T(L"Move left"));
+    AppendMenuW(m, MF_STRING | (g_wantWidget ? 0 : MF_GRAYED), ID_OFFSET_RIGHT, T(L"Move right"));
+    AppendMenuW(m, MF_STRING | (g_wantWidget ? 0 : MF_GRAYED), ID_OFFSET_RESET, T(L"Reset position"));
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     // Language: automatic, every built-in or user-added language (in its own name), and a way to add one.
     i18n::Init();  // picks up language files added since the last time
@@ -1004,6 +1075,7 @@ void ShowMenu() {
         AppendMenuW(m, MF_POPUP, (UINT_PTR)sub, T(L"Check battery every"));
     }
     AppendMenuW(m, MF_STRING, ID_REFRESH, T(L"Refresh now"));
+    AppendMenuW(m, MF_STRING, ID_TASKMGR, T(L"Open Task Manager"));
     AppendMenuW(m, MF_STRING | (AutostartEnabled() ? MF_CHECKED : 0), ID_AUTOSTART, T(L"Start with Windows"));
     AppendMenuW(m, MF_STRING, ID_REPORT, T(L"Request support for a device..."));
     AppendMenuW(m, MF_STRING, ID_SUPPORT, T(L"Support the project..."));
@@ -1033,6 +1105,10 @@ void ShowMenu() {
         case ID_LANG_ADD: i18n::OpenUserFolder(); break;
         case ID_MONITOR_MAIN: SetWidgetMonitor(L"main"); break;
         case ID_BRAND_COLORS: SetBrandColors(!g_brandColors); break;
+        case ID_OFFSET_LEFT: AdjustTaskbarOffset(+8); break;
+        case ID_OFFSET_RIGHT: AdjustTaskbarOffset(-8); break;
+        case ID_OFFSET_RESET: AdjustTaskbarOffset(0); break;
+        case ID_TASKMGR: ShellExecuteW(nullptr, L"open", L"taskmgr.exe", nullptr, nullptr, SW_SHOWNORMAL); break;
         case ID_STACKED: SetStacked(!g_stacked); break;
         case ID_MODE_WIDGET: SetMode(true); break;
         case ID_MODE_TRAY: SetMode(false); break;
@@ -1044,6 +1120,20 @@ void ShowMenu() {
         default:
             if (cmd >= ID_POLL_FIRST && cmd < ID_POLL_FIRST + ARRAYSIZE(POLL_SECONDS)) {
                 SetPollSeconds(POLL_SECONDS[cmd - ID_POLL_FIRST]);
+            } else if (cmd >= ID_METRIC_INTERVAL_FIRST && cmd < ID_METRIC_INTERVAL_FIRST + ARRAYSIZE(METRIC_POLL_SECONDS)) {
+                g_metricIntervalMs = METRIC_POLL_SECONDS[cmd - ID_METRIC_INTERVAL_FIRST] * 1000;
+                SaveMetricIntervalMs(g_metricIntervalMs);
+                metrics::SetSamplerInterval(g_metricIntervalMs);
+            } else if (cmd >= ID_METRIC_WHERE_FIRST && cmd < ID_METRIC_WHERE_FIRST + metrics::kCount * 4) {
+                UINT rel = cmd - ID_METRIC_WHERE_FIRST;
+                int id = static_cast<int>(rel / 4);
+                UINT loc = rel % 4;
+                if (id >= 0 && id < metrics::kCount && loc <= static_cast<UINT>(metrics::Where::Hidden)) {
+                    g_metricCfg.where[id] = static_cast<metrics::Where>(loc);
+                    SaveMetricsWhere();
+                    ApplyMetricTray(id);
+                    UpdateWidget();
+                }
             } else if (cmd >= ID_LANG_FIRST && cmd < ID_LANG_FIRST + languages.size()) {
                 SetLanguage(languages[cmd - ID_LANG_FIRST].code);
             } else if (cmd >= ID_MONITOR_FIRST && cmd < ID_MONITOR_FIRST + monitors.size()) {
@@ -1415,6 +1505,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     g_brandColors = LoadBrandColors();
     g_stacked = LoadStacked();
     g_pollIntervalMs = LoadPollSeconds() * 1000;
+    LoadMetricsWhere();
+    g_metricIntervalMs = LoadMetricIntervalMs();
     widget::SetStacked(g_stacked);
     widget::SetBackground(g_widgetBackground);  // remembered by the widget across re-creation
     i18n::Init();
@@ -1431,7 +1523,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     SetTimer(g_hwnd, TIMER_WIDGET, 1000, nullptr);
     g_worker = CreateThread(nullptr, 0, Worker, nullptr, 0, nullptr);
     metrics::SetSamplerTarget(g_hwnd, WM_METRICS);
-    metrics::SetSamplerInterval(5000);
+    metrics::SetSamplerInterval(g_metricIntervalMs);
     g_metricWorker = CreateThread(nullptr, 0, metrics::MetricsWorker, nullptr, 0, nullptr);
 
     MSG m;
