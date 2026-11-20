@@ -12,7 +12,12 @@ namespace {
 
 HWND g_wnd, g_taskbar, g_tip, g_notify, g_rebar;
 UINT g_clickMsg;
-bool g_light, g_hover;
+bool g_light;
+constexpr int kHoverInMs = 100, kHoverOutMs = 180;
+constexpr UINT_PTR TIMER_HOVER = 4;
+float g_hoverT = 0.0f, g_hoverFrom = 0.0f;
+ULONGLONG g_hoverStart = 0;
+int g_hoverDir = 0;
 bool g_background;  // opaque rounded plate behind the text, for transparent / restyled taskbars
 bool g_stacked;     // icon above the percentage (menu option, PR #525)
 bool g_vertical;    // the primary taskbar is docked left or right: one block per device, stacked (PR #321)
@@ -30,7 +35,9 @@ HINSTANCE g_inst;
 // left of its taskbar's clock. The primary strip above is unchanged, and with one monitor none exist.
 struct Mirror {
     HWND bar = nullptr, wnd = nullptr;
-    bool hover = false;
+    float hoverT = 0.0f, hoverFrom = 0.0f;
+    ULONGLONG hoverStart = 0;
+    int hoverDir = 0;
     SIZE size{};
     int dpi = 0;
     int lastLeft = INT_MIN;  // client x it was last placed at; INT_MIN = not placed (hidden)
@@ -627,50 +634,121 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
     return out;
 }
 
-// Draws the strip for one window: the primary one or a mirror on a secondary taskbar.
-void PaintStrip(HWND wnd, HWND taskbar, bool hover, SIZE& size, int maxW = INT_MAX) {
+struct LayoutCache {
+    bool valid = false;
+    bool light = false;
+    int dpi = 0;
+    bool stacked = false;
+    bool vertical = false;
+    int barW = 0, barH = 0;
+    int maxW = INT_MAX;
+    std::vector<WidgetItem> items;
+    std::vector<Piece> pieces;
+    int w = 0, h = 0;
+    std::wstring hiddenTip;
+};
+
+LayoutCache g_primaryCache;
+std::vector<std::pair<HWND, LayoutCache>> g_mirrorCaches;
+
+bool SameItems(const std::vector<WidgetItem>& a, const std::vector<WidgetItem>& b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); i++) {
+        const auto& x = a[i];
+        const auto& y = b[i];
+        if (x.kind != y.kind || x.percent != y.percent || x.text != y.text ||
+            x.charging != y.charging || x.full != y.full || x.dim != y.dim ||
+            x.low != y.low || x.bluetooth != y.bluetooth || x.label != y.label ||
+            x.accent != y.accent || x.metric != y.metric || x.glyphOverride != y.glyphOverride ||
+            x.name != y.name)
+            return false;
+    }
+    return true;
+}
+
+LayoutCache& CacheFor(HWND wnd) {
+    if (wnd == g_wnd) return g_primaryCache;
+    for (auto& kv : g_mirrorCaches)
+        if (kv.first == wnd) return kv.second;
+    g_mirrorCaches.push_back({ wnd, LayoutCache{} });
+    return g_mirrorCaches.back().second;
+}
+
+void InvalidateAllCaches() {
+    g_primaryCache.valid = false;
+    for (auto& kv : g_mirrorCaches) kv.second.valid = false;
+}
+
+void PaintStrip(HWND wnd, HWND taskbar, SIZE& size, int maxW, float hoverT) {
     RECT bar;
     GetClientRect(taskbar, &bar);
-    int W = 0, H = 0;
-    auto pieces = Layout(bar.right - bar.left, bar.bottom - bar.top, W, H);
-    if (wnd == g_wnd) g_hiddenTip.clear();
-    if (maxW < INT_MAX && W > maxW && !g_items.empty()) {
-        std::vector<int> itemWidths;
-        int moreW = 0;
-        pieces = Layout(bar.right - bar.left, bar.bottom - bar.top, W, H, true, nullptr, false, &itemWidths, &moreW);
-        if (!g_vertical && W > maxW) {
-            std::vector<uint8_t> isMetric(g_items.size(), 0);
-            int lowIdx = -1;
-            for (size_t i = 0; i < g_items.size(); i++) {
-                isMetric[i] = g_items[i].metric >= 0 ? 1 : 0;
-                if (g_items[i].metric < 0 && g_items[i].low && lowIdx < 0) lowIdx = static_cast<int>(i);
-            }
-            int avail = std::max(0, maxW - moreW - Px(16));
-            auto hidden = metrics::PickHidden(itemWidths, avail, isMetric, lowIdx);
-            if (!hidden.empty()) {
-                std::vector<uint8_t> skip(g_items.size(), 0);
-                std::wstring names;
-                for (int idx : hidden) {
-                    if (idx >= 0 && idx < static_cast<int>(g_items.size())) {
-                        skip[idx] = 1;
-                        if (!g_items[idx].name.empty()) {
-                            if (!names.empty()) names += L", ";
-                            names += g_items[idx].name;
+    int barW = bar.right - bar.left, barH = bar.bottom - bar.top;
+    int dpi = Dpi();
+    LayoutCache& cache = CacheFor(wnd);
+    bool cacheHit = cache.valid && cache.light == g_light && cache.dpi == dpi &&
+                    cache.stacked == g_stacked && cache.vertical == g_vertical &&
+                    cache.barW == barW && cache.barH == barH && cache.maxW == maxW &&
+                    SameItems(cache.items, g_items);
+    if (!cacheHit) {
+        int W = 0, H = 0;
+        auto pieces = Layout(barW, barH, W, H);
+        std::wstring hiddenTip;
+        if (maxW < INT_MAX && W > maxW && !g_items.empty()) {
+            std::vector<int> itemWidths;
+            int moreW = 0;
+            pieces = Layout(barW, barH, W, H, true, nullptr, false, &itemWidths, &moreW);
+            if (!g_vertical && W > maxW) {
+                std::vector<uint8_t> isMetric(g_items.size(), 0);
+                int lowIdx = -1;
+                for (size_t i = 0; i < g_items.size(); i++) {
+                    isMetric[i] = g_items[i].metric >= 0 ? 1 : 0;
+                    if (g_items[i].metric < 0 && g_items[i].low && lowIdx < 0) lowIdx = static_cast<int>(i);
+                }
+                int avail = std::max(0, maxW - moreW - Px(16));
+                auto hidden = metrics::PickHidden(itemWidths, avail, isMetric, lowIdx);
+                if (!hidden.empty()) {
+                    std::vector<uint8_t> skip(g_items.size(), 0);
+                    std::wstring names;
+                    for (int idx : hidden) {
+                        if (idx >= 0 && idx < static_cast<int>(g_items.size())) {
+                            skip[idx] = 1;
+                            if (!g_items[idx].name.empty()) {
+                                if (!names.empty()) names += L", ";
+                                names += g_items[idx].name;
+                            }
                         }
                     }
+                    if (wnd == g_wnd && !names.empty()) hiddenTip = T(L"Hidden") + std::wstring(L": ") + names;
+                    pieces = Layout(barW, barH, W, H, true, &skip, true);
                 }
-                if (wnd == g_wnd && !names.empty()) g_hiddenTip = T(L"Hidden") + std::wstring(L": ") + names;
-                pieces = Layout(bar.right - bar.left, bar.bottom - bar.top, W, H, true, &skip, true);
             }
         }
+        cache.valid = true;
+        cache.light = g_light;
+        cache.dpi = dpi;
+        cache.stacked = g_stacked;
+        cache.vertical = g_vertical;
+        cache.barW = barW;
+        cache.barH = barH;
+        cache.maxW = maxW;
+        cache.items = g_items;
+        cache.pieces = std::move(pieces);
+        cache.w = W;
+        cache.h = H;
+        cache.hiddenTip = std::move(hiddenTip);
     }
-    if (wnd == g_wnd && g_tip && !g_tipText.empty()) {
-        std::wstring fullTip = g_hiddenTip.empty() ? g_tipText : (g_hiddenTip + L"\n" + g_tipText);
-        TTTOOLINFOW ti{ sizeof(ti) };
-        ti.hwnd = g_notify;
-        ti.lpszText = const_cast<wchar_t*>(fullTip.c_str());
-        ti.uId = (UINT_PTR)g_wnd;
-        SendMessageW(g_tip, TTM_UPDATETIPTEXTW, 0, (LPARAM)&ti);
+    const auto& pieces = cache.pieces;
+    int W = cache.w, H = cache.h;
+    if (wnd == g_wnd) {
+        g_hiddenTip = cache.hiddenTip;
+        if (!cacheHit && g_tip && !g_tipText.empty()) {
+            std::wstring fullTip = g_hiddenTip.empty() ? g_tipText : (g_hiddenTip + L"\n" + g_tipText);
+            TTTOOLINFOW ti{ sizeof(ti) };
+            ti.hwnd = g_notify;
+            ti.lpszText = const_cast<wchar_t*>(fullTip.c_str());
+            ti.uId = (UINT_PTR)g_wnd;
+            SendMessageW(g_tip, TTM_UPDATETIPTEXTW, 0, (LPARAM)&ti);
+        }
     }
     if (W <= 0 || H <= 0) return;
     Canvas cv(W, H);
@@ -690,7 +768,10 @@ void PaintStrip(HWND wnd, HWND taskbar, bool hover, SIZE& size, int maxW = INT_M
     // (e.g. Windhawk's Taskbar Styler) makes the bar transparent over the wallpaper.
     Rgb barColor = g_light ? Rgb{ 243, 243, 243 } : Rgb{ 32, 32, 32 };
     if (g_background) roundRect(Px(4), Px(6), barColor, 240);
-    if (hover) roundRect(Px(4), Px(4), g_light ? Rgb{ 0, 0, 0 } : Rgb{ 255, 255, 255 }, g_light ? 20 : 26);
+    if (hoverT > 0.0f) {
+        int a = static_cast<int>((g_light ? 20 : 26) * hoverT);
+        if (a > 0) roundRect(Px(4), Px(4), g_light ? Rgb{ 0, 0, 0 } : Rgb{ 255, 255, 255 }, a);
+    }
 
     int x = Px(8);
     Rgb track = g_light ? Rgb{ 0, 0, 0 } : Rgb{ 255, 255, 255 };
@@ -745,16 +826,18 @@ void PaintStrip(HWND wnd, HWND taskbar, bool hover, SIZE& size, int maxW = INT_M
 
 void Paint() {
     if (!g_wnd) return;
-    PaintStrip(g_wnd, g_taskbar, g_hover, g_size, g_maxW);
-    g_lastW = -1;  // force a re-position with the new size
+    SIZE prev = g_size;
+    PaintStrip(g_wnd, g_taskbar, g_size, g_maxW, g_hoverT);
+    if (g_size.cx != prev.cx || g_size.cy != prev.cy) g_lastW = -1;  // force a re-position with the new size
 }
 
 void PaintMirror(Mirror& m) {
     g_dpiBar = m.bar;
     m.dpi = Dpi();
-    PaintStrip(m.wnd, m.bar, m.hover, m.size);
+    SIZE prev = m.size;
+    PaintStrip(m.wnd, m.bar, m.size, INT_MAX, m.hoverT);
     g_dpiBar = nullptr;
-    m.lastLeft = INT_MIN;  // force a re-position with the new size
+    if (m.size.cx != prev.cx || m.size.cy != prev.cy) m.lastLeft = INT_MIN;  // force a re-position with the new size
 }
 
 void HideMirror(Mirror& m) {
@@ -768,7 +851,10 @@ void PositionMirror(Mirror& m) {
     RECT bar{};
     if (!GetWindowRect(m.bar, &bar) || (GetWindowLongW(m.bar, GWL_EXSTYLE) & WS_EX_LAYOUTRTL)) { HideMirror(m); return; }
     g_dpiBar = m.bar;
-    if (Dpi() != m.dpi || m.size.cy != bar.bottom - bar.top) PaintMirror(m), g_dpiBar = m.bar;
+    if (Dpi() != m.dpi || m.size.cy != bar.bottom - bar.top) {
+        CacheFor(m.wnd).valid = false;
+        PaintMirror(m), g_dpiBar = m.bar;
+    }
     int right = 0, minLeft = bar.left;
     bool known = false;
     // StartAllBack can put a full notification area on each secondary taskbar.
@@ -838,7 +924,14 @@ void DestroyMirror(Mirror& m) {
         ti.uId = (UINT_PTR)m.wnd;
         SendMessageW(g_tip, TTM_DELTOOLW, 0, (LPARAM)&ti);
     }
-    if (m.wnd && IsWindow(m.wnd)) DestroyWindow(m.wnd);
+    g_mirrorCaches.erase(
+        std::remove_if(g_mirrorCaches.begin(), g_mirrorCaches.end(),
+                       [&m](const auto& kv) { return kv.first == m.wnd; }),
+        g_mirrorCaches.end());
+    if (m.wnd && IsWindow(m.wnd)) {
+        KillTimer(m.wnd, TIMER_HOVER);
+        DestroyWindow(m.wnd);
+    }
     m.wnd = nullptr;
 }
 
@@ -950,21 +1043,84 @@ void PaintAll() {
     for (auto& m : g_mirrors) PaintMirror(m);
 }
 
-// Hover highlight for the strip under the mouse: the primary one or a mirror.
-void SetHover(HWND h, bool on) {
+float HoverStep(ULONGLONG now, float from, ULONGLONG start, int dir, bool& done) {
+    int dur = dir > 0 ? kHoverInMs : kHoverOutMs;
+    float p = std::clamp((float)(now - start) / (float)dur, 0.0f, 1.0f);
+    done = p >= 1.0f;
+    float e = 1.0f - (1.0f - p) * (1.0f - p) * (1.0f - p);
+    return dir > 0 ? from + (1.0f - from) * e : from * (1.0f - e);
+}
+
+bool FindHoverState(HWND h, float*& t, float*& from, ULONGLONG*& start, int*& dir, Mirror*& mirror) {
+    mirror = nullptr;
     if (h == g_wnd) {
-        if (g_hover == on) return;
-        g_hover = on;
-        Paint();
-        widget::Reposition();
+        t = &g_hoverT;
+        from = &g_hoverFrom;
+        start = &g_hoverStart;
+        dir = &g_hoverDir;
+        return true;
+    }
+    for (auto& m : g_mirrors) {
+        if (m.wnd == h) {
+            mirror = &m;
+            t = &m.hoverT;
+            from = &m.hoverFrom;
+            start = &m.hoverStart;
+            dir = &m.hoverDir;
+            return true;
+        }
+    }
+    return false;
+}
+
+void StartHover(HWND h, bool on) {
+    float* t = nullptr;
+    float* from = nullptr;
+    ULONGLONG* start = nullptr;
+    int* dir = nullptr;
+    Mirror* mirror = nullptr;
+    if (!FindHoverState(h, t, from, start, dir, mirror)) return;
+
+    int targetDir = on ? 1 : -1;
+    if (*dir == targetDir) return;
+    if (*dir == 0 && (on ? *t >= 1.0f : *t <= 0.0f)) return;
+
+    BOOL anim = TRUE;
+    SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &anim, 0);
+    if (!anim) {
+        *t = on ? 1.0f : 0.0f;
+        *dir = 0;
+        KillTimer(h, TIMER_HOVER);
+        if (mirror) PaintMirror(*mirror);
+        else Paint();
         return;
     }
-    for (auto& m : g_mirrors)
-        if (m.wnd == h && m.hover != on) {
-            m.hover = on;
-            PaintMirror(m);
-            PositionMirror(m);
-        }
+
+    *from = *t;
+    *start = GetTickCount64();
+    *dir = targetDir;
+    SetTimer(h, TIMER_HOVER, 16, nullptr);
+}
+
+void OnHoverTimer(HWND h) {
+    float* t = nullptr;
+    float* from = nullptr;
+    ULONGLONG* start = nullptr;
+    int* dir = nullptr;
+    Mirror* mirror = nullptr;
+    if (!FindHoverState(h, t, from, start, dir, mirror) || *dir == 0) {
+        KillTimer(h, TIMER_HOVER);
+        return;
+    }
+    bool done = false;
+    *t = HoverStep(GetTickCount64(), *from, *start, *dir, done);
+    if (done) {
+        *t = *dir > 0 ? 1.0f : 0.0f;
+        *dir = 0;
+        KillTimer(h, TIMER_HOVER);
+    }
+    if (mirror) PaintMirror(*mirror);
+    else Paint();
 }
 
 LRESULT CALLBACK WidgetProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
@@ -972,12 +1128,18 @@ LRESULT CALLBACK WidgetProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_MOUSEMOVE: {
             TRACKMOUSEEVENT t{ sizeof(t), TME_LEAVE, h, 0 };
             TrackMouseEvent(&t);
-            SetHover(h, true);
+            StartHover(h, true);
             return 0;
         }
         case WM_MOUSELEAVE:
-            SetHover(h, false);
+            StartHover(h, false);
             return 0;
+        case WM_TIMER:
+            if (wp == TIMER_HOVER) {
+                OnHoverTimer(h);
+                return 0;
+            }
+            break;
         case WM_LBUTTONUP:
             PostMessageW(g_notify, g_clickMsg, 1, 0);
             return 0;
@@ -1061,15 +1223,21 @@ void Destroy() {
     g_primaryHidden = false;  // the next Create() decides again
     if (g_wbWake) WatchWidgetsButton(nullptr);
     if (g_tip) { DestroyWindow(g_tip); g_tip = nullptr; }
-    if (g_wnd) { DestroyWindow(g_wnd); g_wnd = nullptr; }
+    if (g_wnd) { KillTimer(g_wnd, TIMER_HOVER); DestroyWindow(g_wnd); g_wnd = nullptr; }
     g_taskbar = nullptr;
-    g_hover = false;
+    g_hoverT = 0.0f;
+    g_hoverFrom = 0.0f;
+    g_hoverStart = 0;
+    g_hoverDir = 0;
+    g_primaryCache = {};
+    g_mirrorCaches.clear();
 }
 
 bool Alive() { return g_wnd && IsWindow(g_wnd) && g_taskbar && IsWindow(g_taskbar); }
 
 void SetItems(const std::vector<WidgetItem>& items, const std::wstring& tooltip) {
     g_items = items;
+    InvalidateAllCaches();
     if (tooltip != g_tipText && g_tip) {
         g_tipText = tooltip;
         TTTOOLINFOW ti{ sizeof(ti) };
@@ -1088,6 +1256,7 @@ void SetItems(const std::vector<WidgetItem>& items, const std::wstring& tooltip)
 
 void SetLightTheme(bool light) {
     g_light = light;
+    InvalidateAllCaches();
     ApplyTipTheme();
     PaintAll();
 }
@@ -1099,6 +1268,7 @@ void SetBackground(bool on) {
 
 void SetStacked(bool on) {
     g_stacked = on;
+    InvalidateAllCaches();
     PaintAll();
     if (g_wnd) Reposition();
 }
@@ -1120,7 +1290,7 @@ bool Reposition() {
     if (!Alive()) return false;
     SyncMirrors();
     if (g_primaryHidden) return true;  // only another monitor's taskbar shows the strip
-    if (Dpi() != g_lastDpi) { g_lastDpi = Dpi(); Paint(); }
+    if (Dpi() != g_lastDpi) { g_lastDpi = Dpi(); g_primaryCache.valid = false; Paint(); }
     HWND tray = FindWindowExW(g_taskbar, nullptr, L"TrayNotifyWnd", nullptr);
     if (!tray) return true;
     RECT tr, bar;
@@ -1130,6 +1300,7 @@ bool Reposition() {
     bool vertical = bar.bottom - bar.top > bar.right - bar.left;
     if (vertical != g_vertical) {
         g_vertical = vertical;
+        g_primaryCache.valid = false;
         Paint();
     }
     if (g_vertical) {
@@ -1209,6 +1380,7 @@ bool Reposition() {
     }
     if (newMaxW != g_maxW) {
         g_maxW = newMaxW;
+        g_primaryCache.valid = false;
         Paint();
     }
     int left = rightClient - g_size.cx;
