@@ -9,13 +9,13 @@ CXXFLAGS ?= -std=c++17 -Os -Wall -Wno-missing-field-initializers -ffunction-sect
 LDFLAGS  ?= -municode -mwindows -static -s -Wl,--gc-sections
 LIBS     := -lhid -lsetupapi -lcfgmgr32 -lole32 -loleaut32 -lcomctl32 -lgdi32 -lruntimeobject -lws2_32 -lwinhttp -lbcrypt -lversion -lbluetoothapis
 
-SRC := $(wildcard src/*.cpp) $(wildcard src/drivers/*.cpp)
+SRC := $(wildcard src/*.cpp) $(wildcard src/drivers/*.cpp) $(wildcard src/metrics/*.cpp)
 OBJ := $(patsubst src/%.cpp,build/%.o,$(SRC)) build/app_res.o
 
 Monitor.exe: $(OBJ)
 	$(CXX) $(LDFLAGS) $^ -o $@ $(LIBS)
 
-build/%.o: src/%.cpp $(wildcard src/*.h src/drivers/*.h) build/version.h
+build/%.o: src/%.cpp $(wildcard src/*.h src/drivers/*.h src/metrics/*.h) build/version.h
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -municode -c $< -o $@
 
@@ -34,7 +34,7 @@ build/app_res.o: res/app.rc res/app.manifest res/app.ico res/app_light.ico build
 clean:
 	rm -rf build Monitor.exe
 
-test: test-update-core test-update-win test-update-signature
+test: test-update-core test-update-win test-update-signature test-metrics
 	@mkdir -p build
 	$(CXX) -std=c++17 -O2 -Wall tests/device_aliases_test.cpp -o build/device_aliases_test.exe
 	./build/device_aliases_test.exe
@@ -133,4 +133,9 @@ test-update-win: build/version.h build/app_res.o
 
 FORCE:
 
-.PHONY: clean test test-update-core test-update-win test-update-signature FORCE
+test-metrics:
+	@mkdir -p build
+	$(CXX) -std=c++17 -O2 -Wall -Wextra tests/metrics_test.cpp src/metrics/metrics_format.cpp -o build/metrics_test.exe
+	./build/metrics_test.exe
+
+.PHONY: clean test test-update-core test-update-win test-update-signature test-metrics FORCE
