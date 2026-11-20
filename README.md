@@ -490,6 +490,8 @@ The protocols come from these projects' research:
 
 ## License
 
-[GNU General Public License v3.0 or later](LICENSE). You may use, modify and redistribute this
-software, but anything you distribute that is based on it must be released under the same license,
-with its source code.
+[GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).
+
+Monitor is built on:
+- [Wireless-Device-Battery-Monitor (BatteryHub)](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor) by **krisgfx9** (GPL-3.0; combined under AGPL-3.0 §13)
+- [TraySense](https://github.com/DMTWEAKS/TraySense) by **DMTWEAKS** (AGPL-3.0; origin of the system metrics reading code)

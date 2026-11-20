@@ -1,12 +1,24 @@
-BatteryHub bundles the following third-party software.
+Monitor bundles or incorporates the following third-party software.
+
+BatteryHub (Wireless-Device-Battery-Monitor)
+  Copyright (C) krisgfx9 and contributors
+  https://github.com/krisgfx9/Wireless-Device-Battery-Monitor
+  License: GNU General Public License v3.0 (GPL-3.0)
+  Base codebase for Monitor (shell, taskbar widget, device drivers, updater, installer).
+
+TraySense
+  Copyright (C) DMTWEAKS
+  https://github.com/DMTWEAKS/TraySense
+  License: GNU Affero General Public License v3.0 (AGPL-3.0, same text as LICENSE.txt)
+  Origin of the system metrics reading code ported to Monitor.
 
 HeadsetControl 4.3.0 (headsetcontrol.exe)
   Copyright (C) the HeadsetControl contributors
   https://github.com/Sapd/HeadsetControl
-  License: GNU General Public License v3.0 (same text as LICENSE.txt)
+  License: GNU General Public License v3.0
   Corresponding source code:
     https://github.com/Sapd/HeadsetControl/releases/tag/4.3.0
-    (headsetcontrol-4.3.0.tar.gz is also attached to every BatteryHub release)
+    (headsetcontrol-4.3.0.tar.gz is also attached to every Monitor release)
 
   The binary is the unmodified official release asset
   headsetcontrol-windows-x86_64.exe,
