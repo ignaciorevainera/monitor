@@ -37,6 +37,7 @@ Name: "autostart"; Description: "Start Monitor when I sign in to Windows"
 
 [Files]
 Source: "{#Root}\Monitor.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#Root}\Monitor.TempHelper.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Root}\third_party\headsetcontrol\headsetcontrol.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Root}\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
 Source: "{#Root}\installer\THIRD_PARTY_NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
@@ -117,13 +118,26 @@ begin
     RegDeleteValue(HKCU, RunKey, 'WirelessBattery');
 end;
 
-{ An entry that still starts the old exe of this copy now starts Monitor.exe (also on silent updates). }
+function UnquoteRunPath(const S: String): String;
+begin
+  Result := Trim(S);
+  if (Length(Result) >= 2) and (Result[1] = '"') and (Result[Length(Result)] = '"') then
+    Result := Copy(Result, 2, Length(Result) - 2);
+end;
+
+{ An entry that still starts an old exe or a Monitor.exe outside the install dir now starts the installed Monitor.exe (also on silent updates). }
 procedure MigrateAutostart();
 var
-  Value: String;
+  Value, ExePath, ExeName, InstalledExe: String;
 begin
-  if RegQueryStringValue(HKCU, RunKey, 'WirelessBattery', Value) and
-     ((CompareText(Value, PrevRunValue()) = 0) or (CompareText(Value, OldRunValue()) = 0)) then
+  if not RegQueryStringValue(HKCU, RunKey, 'WirelessBattery', Value) then
+    exit;
+  ExePath := UnquoteRunPath(Value);
+  ExeName := ExtractFileName(ExePath);
+  InstalledExe := ExpandConstant('{app}\Monitor.exe');
+  if (CompareText(ExeName, 'WirelessBattery.exe') = 0) or
+     (CompareText(ExeName, 'BatteryHub.exe') = 0) or
+     ((CompareText(ExeName, 'Monitor.exe') = 0) and (CompareText(ExePath, InstalledExe) <> 0)) then
     RegWriteStringValue(HKCU, RunKey, 'WirelessBattery', InstalledRunValue());
 end;
 
