@@ -68,6 +68,14 @@ Estado: 19-11-2026. Spec: `docs/monitor-spec.md` (decisiones D1–D15).
 - **es.txt a cobertura total** (213 claves = template). El script de verificación (diff template↔es + placeholders por línea + UTF-8) sirve para auditar cualquier otro idioma — candidato a E4.
 - Zero REJECT en esta pasada (3/3 approve a la primera).
 
+## Deltas aprendidos en la E2.7 (etiqueta de componente)
+
+- **Compacto unifica a `[glifo] valor`**: en estilo Palabra, el compacto cae al glifo del componente (veredicto del reviewer: consistente — nunca valores desnudos indistinguibles). Estilo Icono/Palabra/Ambos convergen en compacto.
+- **Palabra alfa `min(a, 170)`**: hereda el dim del ítem (un métrico `--` también atenúa su palabra).
+- IDs 151-153 usados (radio en el `switch(cmd)` del menú, zona libre confirmada). La próxima opción simple: 155+.
+- Nota no bloqueante del reviewer para E4: en apilado/vertical, palabra y valor van top-aligned — un `--` puede quedar pegado arriba; cosmético, evaluar si se nota.
+- Cuarta pasada con **cero REJECT**.
+
 ## Skeletons
 
 ### Etapa 1 — Métricas nativas sin admin
