@@ -25,7 +25,7 @@ Una sola app nativa, sin admin, que muestra en la taskbar: métricas del sistema
 | # | Decisión | Detalle |
 |---|---|---|
 | D1 | Repo público | `ignaciorevainera/monitor`, historia del fork, upstream remoto |
-| D2 | Sin admin | CPU temp = PDH Thermal Zone (fallback nativo de TraySense); GPU temp = KMT (+ NVML si NVIDIA); SSD temp = IOCTL access-0. Sin PawnIO |
+| D2 | Sin admin (Monitor) | Monitor siempre corre `asInvoker`. CPU temp = helper elevado opcional (`Monitor.TempHelper.exe` via tarea `HighestAvailable`, PawnIO con módulos embebidos) > PDH Thermal Zone > `--`; GPU temp = KMT (+ NVML si NVIDIA); SSD temp = IOCTL access-0 |
 | D3 | Upgrade in-place | Mismo Inno AppId `{7E0B5C2A-3F4D-4C8E-9B61-2D5A8F1C4E93}`; internos (clase de ventana, mutex, raíz de registro, Run value, carpetas de datos) se conservan — ver "Identidad" |
 | D4 | Sin firma de release | CHANNEL dev ⇒ updater inerte; `Repository`/asset/user-agent se repuntan igualmente (cableado listo); activación en backlog |
 | D5 | Bandeja | Iconos **por métrica** (uID `0x2000 + m`); en Win11 caen al overflow oculto hasta promoción manual — documentado en README |

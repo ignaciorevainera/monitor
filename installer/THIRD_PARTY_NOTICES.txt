@@ -23,3 +23,9 @@ HeadsetControl 4.3.0 (headsetcontrol.exe)
   The binary is the unmodified official release asset
   headsetcontrol-windows-x86_64.exe,
   SHA-256 e371da043710ddb8fc70af77f2ccad1cd03f8c6f49ba423e08764ad7a94a3c40.
+
+PawnIO.Modules (IntelMSR.bin, AMDFamily17.bin)
+  Copyright (C) namazso
+  https://github.com/namazso/PawnIO.Modules
+  License: GNU Lesser General Public License v2.1 (LGPL-2.1)
+  See third_party/pawnio/COPYING for the full license text.
