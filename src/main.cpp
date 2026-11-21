@@ -52,6 +52,7 @@ enum MenuId : UINT {
     ID_BRAND_COLORS, ID_STACKED, ID_SHOW_DISCONNECTED, ID_RECORD_HISTORY,
     ID_OFFSET_LEFT, ID_OFFSET_RIGHT, ID_OFFSET_RESET, ID_TASKMGR,
     ID_METRIC_GROUP = 150,
+    ID_LABEL_FIRST = 151,  // "Component label": ID_LABEL_FIRST + 0..2
     ID_POLL_FIRST = 500,  // "Check battery every": ID_POLL_FIRST + 0..7
     ID_METRIC_INTERVAL_FIRST = 600,  // "Refresh rate": ID_METRIC_INTERVAL_FIRST + 0..2
     ID_METRIC_WHERE_FIRST = 700,     // per-metric location: ID_METRIC_WHERE_FIRST + id * 4 + where
@@ -91,15 +92,16 @@ struct MetricSpec {
     wchar_t glyph;
     const wchar_t* name;
     const wchar_t* label;
+    const wchar_t* word;
 };
 constexpr MetricSpec kMetrics[] = {
-    { metrics::Id::CpuUsage, 0xEEA1, L"CPU usage",       nullptr },
-    { metrics::Id::CpuTemp,  0xE957, L"CPU temperature", nullptr },
-    { metrics::Id::RamUsage, 0xEEA0, L"RAM usage",       nullptr },
-    { metrics::Id::GpuUsage, 0xE950, L"GPU usage",       nullptr },
-    { metrics::Id::GpuTemp,  0xE957, L"GPU temperature", nullptr },
-    { metrics::Id::Vram,     0xEEA0, L"VRAM",            L"V" },
-    { metrics::Id::SsdTemp,  0xEDA2, L"SSD temperature", nullptr },
+    { metrics::Id::CpuUsage, 0xEEA1, L"CPU usage",       nullptr, L"CPU" },
+    { metrics::Id::CpuTemp,  0xE957, L"CPU temperature", nullptr, L"CPU\u00B0" },
+    { metrics::Id::RamUsage, 0xEEA0, L"RAM usage",       nullptr, L"RAM" },
+    { metrics::Id::GpuUsage, 0xE950, L"GPU usage",       nullptr, L"GPU" },
+    { metrics::Id::GpuTemp,  0xE957, L"GPU temperature", nullptr, L"GPU\u00B0" },
+    { metrics::Id::Vram,     0xEEA0, L"VRAM",            L"V",    L"VRAM" },
+    { metrics::Id::SsdTemp,  0xEDA2, L"SSD temperature", nullptr, L"SSD\u00B0" },
 };
 UINT g_taskbarCreatedMsg;
 bool g_lightTaskbar;
@@ -113,6 +115,7 @@ bool g_widgetBackground = false;  // draw a plate behind the taskbar text (trans
 bool g_stacked = false;      // icon above the percentage (menu option)
 bool g_brandColors = false;  // off by default; known brands get their color (Razer green, Logitech blue, ...)
 bool g_groupTempsWithUsage = false;
+int g_metricLabelStyle = 0;
 std::atomic<DWORD> g_pollIntervalMs{ 60 * 1000 };  // set from the menu, read by the worker thread
 
 struct TrayEntry {
@@ -322,6 +325,15 @@ bool LoadBrandColors() { return LoadBoolSetting(L"BrandColors", false); }
 void SaveBrandColors(bool on) { SaveBoolSetting(L"BrandColors", on); }
 bool LoadGroupTempsWithUsage() { return LoadBoolSetting(L"GroupTempsWithUsage", false); }
 void SaveGroupTempsWithUsage(bool on) { SaveBoolSetting(L"GroupTempsWithUsage", on); }
+int LoadMetricLabelStyle() {
+    DWORD v = 0, sz = sizeof(v);
+    RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, L"MetricLabelStyle", RRF_RT_REG_DWORD, nullptr, &v, &sz);
+    return (v <= 2) ? static_cast<int>(v) : 0;
+}
+void SaveMetricLabelStyle(int style) {
+    DWORD v = static_cast<DWORD>(style);
+    RegSetKeyValueW(HKEY_CURRENT_USER, kSettingsKey, L"MetricLabelStyle", REG_DWORD, &v, sizeof(v));
+}
 DWORD LoadPollSeconds() {
     DWORD v = 60, sz = sizeof(v);
     RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, L"PollIntervalSeconds", RRF_RT_REG_DWORD, nullptr, &v, &sz);
@@ -1107,6 +1119,12 @@ void ShowMenu() {
         if (checkedRate) CheckMenuRadioItem(rate, ID_METRIC_INTERVAL_FIRST, ID_METRIC_INTERVAL_FIRST + rateCount - 1, checkedRate, MF_BYCOMMAND);
         AppendMenuW(mm, MF_POPUP, (UINT_PTR)rate, T(L"Refresh rate"));
         AppendMenuW(mm, MF_STRING | (g_groupTempsWithUsage ? MF_CHECKED : 0), ID_METRIC_GROUP, T(L"Group temperature with usage"));
+        HMENU lbl = CreatePopupMenu();
+        AppendMenuW(lbl, MF_STRING, ID_LABEL_FIRST + 0, T(L"Icon"));
+        AppendMenuW(lbl, MF_STRING, ID_LABEL_FIRST + 1, T(L"Word"));
+        AppendMenuW(lbl, MF_STRING, ID_LABEL_FIRST + 2, T(L"Both"));
+        CheckMenuRadioItem(lbl, ID_LABEL_FIRST, ID_LABEL_FIRST + 2, ID_LABEL_FIRST + g_metricLabelStyle, MF_BYCOMMAND);
+        AppendMenuW(mm, MF_POPUP, (UINT_PTR)lbl, T(L"Component label"));
         AppendMenuW(m, MF_POPUP, (UINT_PTR)mm, T(L"System metrics"));
     }
     AppendMenuW(m, MF_STRING | (g_wantWidget ? 0 : MF_GRAYED), ID_OFFSET_LEFT, T(L"Move left"));
@@ -1200,6 +1218,10 @@ void ShowMenu() {
         default:
             if (cmd >= ID_POLL_FIRST && cmd < ID_POLL_FIRST + ARRAYSIZE(POLL_SECONDS)) {
                 SetPollSeconds(POLL_SECONDS[cmd - ID_POLL_FIRST]);
+            } else if (cmd >= ID_LABEL_FIRST && cmd < ID_LABEL_FIRST + 3) {
+                g_metricLabelStyle = static_cast<int>(cmd - ID_LABEL_FIRST);
+                SaveMetricLabelStyle(g_metricLabelStyle);
+                UpdateWidget();
             } else if (cmd >= ID_METRIC_INTERVAL_FIRST && cmd < ID_METRIC_INTERVAL_FIRST + ARRAYSIZE(METRIC_POLL_SECONDS)) {
                 g_metricIntervalMs = METRIC_POLL_SECONDS[cmd - ID_METRIC_INTERVAL_FIRST] * 1000;
                 SaveMetricIntervalMs(g_metricIntervalMs);
@@ -1588,6 +1610,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     g_widgetBackground = LoadWidgetBackground();
     g_brandColors = LoadBrandColors();
     g_groupTempsWithUsage = LoadGroupTempsWithUsage();
+    g_metricLabelStyle = LoadMetricLabelStyle();
     g_stacked = LoadStacked();
     g_pollIntervalMs = LoadPollSeconds() * 1000;
     LoadMetricsWhere();

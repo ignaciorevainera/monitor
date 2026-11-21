@@ -33,7 +33,7 @@ Una sola app nativa, sin admin, que muestra en la taskbar: métricas del sistema
 | D7 | Orden del strip | Métricas a la izquierda, baterías a la derecha, **un único gap** (`Px(14)`) entre ítems; opciones de orden/gap → backlog |
 | D8 | Refresh métricas | Default 5 s; menú 1/2/5 s; baterías siguen con su poll propio (30–3600 s) |
 | D9 | Hover | El resaltado de fondo al pasar el mouse se **mantiene** con animación fade-in/out estilo Windows 11 (100 ms in / 180 ms out, ease-out cúbico, alfa 20/26, respeta `SPI_GETCLIENTAREAANIMATION`); tooltip y clic intactos |
-| D10 | Iconos | Solo Segoe Fluent Icons, mismo renderer que baterías. Candidatos: CPU `EEA1`, RAM `EEA0`, GPU `E950` (Component), temp `E957` (Sensor), SSD `EDA2` (HardDrive), VRAM = RAM + caption `V`. Validar en sprite 16 px antes de fijar |
+| D10 | Iconos | Solo Segoe Fluent Icons, mismo renderer que baterías (CPU `EEA1`, RAM `EEA0`, GPU `E950`, temp `E957`, SSD `EDA2`, VRAM = RAM + caption `V`). Opción global de etiqueta por métrica (Icono default / Palabra corta / Ambos); dispositivos inalámbricos sin cambios |
 | D11 | Umbrales de temp | CPU/GPU 80/90 °C, SSD 65/75 °C; naranja/rojo como TraySense |
 | D12 | Clic | Clic derecho abre el menú (conserva "Abrir Administrador de tareas"); clic izquierdo abre el Administrador de tareas |
 | D13 | Idiomas | Inglés + español completos; el resto cae a inglés |

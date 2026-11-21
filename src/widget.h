@@ -25,6 +25,8 @@ struct WidgetItem {
     int severity   = 0;
     std::wstring inlineTempText;
     int inlineTempSeverity = 0;
+    std::wstring word;
+    int labelStyle = 0;
 };
 
 namespace widget {
