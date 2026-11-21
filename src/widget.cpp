@@ -501,11 +501,11 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
 
     int itemGap = compact ? Px(6) : Px(14);
     std::vector<Piece> out;
-    struct Slot { int icon, label, bolt, inlineTemp, itemIdx; };  // indices of one device's pieces (-1 for more slot)
+    struct Slot { int icon, word, label, bolt, inlineTemp, itemIdx; };  // indices of one device's pieces (-1 for absent)
     std::vector<Slot> slots;
     if (showMore) {
         size_t mg = out.size();
-        slots.push_back({ (int)mg, -1, -1, -1, -1 });
+        slots.push_back({ (int)mg, -1, -1, -1, -1, -1 });
         Piece more{ RenderMask(std::wstring(1, kMore), icons, g_light), fg, 220, itemGap };
         if (moreWidth) *moreWidth = more.m.w + itemGap;
         out.push_back(std::move(more));
@@ -526,21 +526,32 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
         Rgb tc = it.severity >= 2 ? critColor : it.severity == 1 ? warnColor : it.low ? red : fg;
         bool mark = it.charging || it.full;  // bolt while charging, green check mark once full
         bool hasInline = !it.inlineTempText.empty();
-        size_t glyph = out.size();
-        int boltIdx = mark ? (int)glyph + 2 : -1;
-        int inlineIdx = hasInline ? (int)glyph + 2 + (mark ? 1 : 0) : -1;
-        slots.push_back({ (int)glyph, (int)glyph + 1, boltIdx, inlineIdx, (int)i });
+        bool showWord = !compact && !it.word.empty() && it.labelStyle != 0;
+        bool showGlyph = (it.labelStyle != 1) || compact;
         bool branded = it.accent != Accent::None;
         BrandColor bc = AccentColor(it.accent, g_light);
         Rgb accent{ bc.r, bc.g, bc.b };
-        Piece icon{ RenderMask(std::wstring(1, Glyph(it.kind, it.bluetooth, it.glyphOverride)), icons, g_light), branded ? accent : fg, a, Px(5) };
-        if (branded && !it.dim) {
-            icon.haloR = Px(3);
-            icon.halo = Halo(icon.m, icon.haloR);
-            icon.haloAlpha = g_light ? 60 : 140;
+        int glyphIdx = -1;
+        int iw = 0;
+        if (showGlyph) {
+            glyphIdx = (int)out.size();
+            Piece icon{ RenderMask(std::wstring(1, Glyph(it.kind, it.bluetooth, it.glyphOverride)), icons, g_light), branded ? accent : fg, a, Px(5) };
+            if (branded && !it.dim) {
+                icon.haloR = Px(3);
+                icon.halo = Halo(icon.m, icon.haloR);
+                icon.haloAlpha = g_light ? 60 : 140;
+            }
+            iw += icon.m.w + icon.gapAfter;
+            out.push_back(std::move(icon));
         }
-        int iw = icon.m.w + icon.gapAfter;
-        out.push_back(std::move(icon));
+        int wordIdx = -1;
+        if (showWord) {
+            wordIdx = (int)out.size();
+            Piece wp{ RenderMask(it.word, text, g_light), fg, std::min(a, 170), Px(4) };
+            iw += wp.m.w + wp.gapAfter;
+            out.push_back(std::move(wp));
+        }
+        int labelIdx = (int)out.size();
         std::wstring t = !it.text.empty() ? it.text : it.percent >= 0 ? std::to_wstring(it.percent) + L"%" : L"?";
         Piece label{ RenderMask(t, text, g_light), tc, a, mark ? Px(2) : (hasInline ? Px(4) : 0) };
         if (branded && it.percent >= 0) {
@@ -549,25 +560,30 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
         }
         iw += label.m.w + label.gapAfter;
         out.push_back(std::move(label));
+        int boltIdx = -1;
         if (mark) {
+            boltIdx = (int)out.size();
             Piece mp{ RenderMask(std::wstring(1, it.full ? kCheck : kBolt), bolt, g_light), it.full ? full : charge, a, hasInline ? Px(4) : 0 };
             iw += mp.m.w + mp.gapAfter;
             out.push_back(std::move(mp));
         }
+        int inlineIdx = -1;
         if (hasInline) {
+            inlineIdx = (int)out.size();
             Rgb itc = it.inlineTempSeverity >= 2 ? critColor : it.inlineTempSeverity == 1 ? warnColor : fg;
             Piece ip{ RenderMask(it.inlineTempText, text, g_light), itc, a, 0 };
             iw += ip.m.w;
             out.push_back(std::move(ip));
         }
+        slots.push_back({ glyphIdx, wordIdx, labelIdx, boltIdx, inlineIdx, (int)i });
         int gap = i < lastVisible ? itemGap : 0;
         out.back().gapAfter = gap;
         if (itemWidths) (*itemWidths)[i] = iw + itemGap;
-        if (!compact && !it.label.empty()) {  // tiny caption in the bottom-right corner of the icon
+        if (showGlyph && !compact && !it.label.empty()) {  // tiny caption in the bottom-right corner of the icon
             Piece c{ RenderMask(it.label, caption, g_light), fg, a, 0 };
-            c.anchor = (int)glyph;
-            c.bx = out[glyph].m.w - c.m.w + Px(3);
-            c.by = out[glyph].m.h - c.m.h + Px(3);
+            c.anchor = glyphIdx;
+            c.bx = out[glyphIdx].m.w - c.m.w + Px(3);
+            c.by = out[glyphIdx].m.h - c.m.h + Px(3);
             out.push_back(c);
         }
     }
@@ -580,7 +596,7 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
     const int rowGap = Px(2), barRoom = Px(5);  // barRoom: space for a brand level bar under the text
     int iconH = 0, textH = 0;
     for (const Slot& s : slots) {
-        iconH = std::max(iconH, out[s.icon].m.h);
+        if (s.icon >= 0) iconH = std::max(iconH, out[s.icon].m.h);
         if (s.label >= 0) textH = std::max(textH, out[s.label].m.h);
     }
     bool stacked = !g_vertical && g_stacked && !slots.empty() && barH >= iconH + rowGap + textH + barRoom + Px(6);
@@ -589,23 +605,33 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
         width = barW;
         int y = Px(6);
         for (const Slot& s : slots) {
-            Piece& ic = out[s.icon];
             if (s.label < 0) {
+                Piece& ic = out[s.icon];
                 ic.px = (barW - ic.m.w) / 2;
                 ic.py = y;
                 y += ic.m.h + itemGap;
                 continue;
             }
+            if (s.icon >= 0) {
+                Piece& ic = out[s.icon];
+                ic.px = (barW - ic.m.w) / 2;
+                ic.py = y;
+                y += ic.m.h + rowGap;
+            }
             Piece& lb = out[s.label];
+            int wordW = s.word >= 0 ? out[s.word].m.w + Px(4) : 0;
             int boltW = s.bolt >= 0 ? Px(2) + out[s.bolt].m.w : 0;
             int inlineW = s.inlineTemp >= 0 ? Px(4) + out[s.inlineTemp].m.w : 0;
-            int rowW = lb.m.w + boltW + inlineW;
-            ic.px = (barW - ic.m.w) / 2;
-            ic.py = y;
-            y += ic.m.h + rowGap;
-            lb.px = (barW - rowW) / 2;
+            int rowW = wordW + lb.m.w + boltW + inlineW;
+            int rx = (barW - rowW) / 2;
+            if (s.word >= 0) {
+                out[s.word].px = rx;
+                out[s.word].py = y;
+                rx += wordW;
+            }
+            lb.px = rx;
             lb.py = y;
-            int rx = lb.px + lb.m.w;
+            rx += lb.m.w;
             if (s.bolt >= 0) {
                 out[s.bolt].px = rx + Px(2);
                 out[s.bolt].py = y + (lb.m.h - out[s.bolt].m.h) / 2;
@@ -625,30 +651,42 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
         int top = (barH - (iconH + rowGap + textH + barRoom)) / 2;
         int x = Px(8);
         for (const Slot& s : slots) {
-            Piece& ic = out[s.icon];
             if (s.label < 0) {
+                Piece& ic = out[s.icon];
                 ic.px = x;
                 ic.py = (barH - ic.m.h) / 2;
                 x += ic.m.w + itemGap;
                 continue;
             }
             Piece& lb = out[s.label];
+            int wordW = s.word >= 0 ? out[s.word].m.w + Px(4) : 0;
             int boltW = s.bolt >= 0 ? Px(2) + out[s.bolt].m.w : 0;
             int inlineW = s.inlineTemp >= 0 ? Px(4) + out[s.inlineTemp].m.w : 0;
-            int textW = lb.m.w + inlineW;
-            int slotW = std::max(ic.m.w + boltW, textW);
+            int textW = wordW + lb.m.w + inlineW;
+            int iconW = s.icon >= 0 ? out[s.icon].m.w + boltW : 0;
+            int slotW = std::max(iconW, textW);
             if (itemWidths && s.itemIdx >= 0) (*itemWidths)[s.itemIdx] = slotW + itemGap;
-            ic.px = x + (slotW - ic.m.w - boltW) / 2;
-            ic.py = top + (iconH - ic.m.h) / 2;
-            if (s.bolt >= 0) {
-                out[s.bolt].px = ic.px + ic.m.w + Px(2);
-                out[s.bolt].py = top + (iconH - out[s.bolt].m.h) / 2;
+            if (s.icon >= 0) {
+                Piece& ic = out[s.icon];
+                ic.px = x + (slotW - ic.m.w - boltW) / 2;
+                ic.py = top + (iconH - ic.m.h) / 2;
+                if (s.bolt >= 0) {
+                    out[s.bolt].px = ic.px + ic.m.w + Px(2);
+                    out[s.bolt].py = top + (iconH - out[s.bolt].m.h) / 2;
+                }
             }
-            lb.px = x + (slotW - textW) / 2;
-            lb.py = top + iconH + rowGap;
+            int tx = x + (slotW - textW) / 2;
+            int ty = s.icon >= 0 ? (top + iconH + rowGap) : ((barH - lb.m.h) / 2);
+            if (s.word >= 0) {
+                out[s.word].px = tx;
+                out[s.word].py = ty;
+                tx += wordW;
+            }
+            lb.px = tx;
+            lb.py = ty;
             if (s.inlineTemp >= 0) {
                 out[s.inlineTemp].px = lb.px + lb.m.w + Px(4);
-                out[s.inlineTemp].py = top + iconH + rowGap + (lb.m.h - out[s.inlineTemp].m.h) / 2;
+                out[s.inlineTemp].py = ty + (lb.m.h - out[s.inlineTemp].m.h) / 2;
             }
             x += slotW + itemGap;
         }

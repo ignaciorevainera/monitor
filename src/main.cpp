@@ -770,6 +770,10 @@ void UpdateWidget() {
             it.dim = !ok;
             it.severity = sev;
             if (m.label) it.label = m.label;
+            if (g_metricLabelStyle != 0) {
+                it.word = m.word;
+                it.labelStyle = g_metricLabelStyle;
+            }
             items.push_back(it);
             continue;
         }
@@ -781,6 +785,10 @@ void UpdateWidget() {
         it.dim = !ok;
         it.severity = sev;
         if (m.label) it.label = m.label;
+        if (g_metricLabelStyle != 0) {
+            it.word = m.word;
+            it.labelStyle = g_metricLabelStyle;
+        }
         items.push_back(it);
     }
     for (size_t i = 0; i < list.size(); i++) {
