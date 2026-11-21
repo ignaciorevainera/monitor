@@ -76,6 +76,14 @@ Estado: 19-11-2026. Spec: `docs/monitor-spec.md` (decisiones D1–D15).
 - Nota no bloqueante del reviewer para E4: en apilado/vertical, palabra y valor van top-aligned — un `--` puede quedar pegado arriba; cosmético, evaluar si se nota.
 - Cuarta pasada con **cero REJECT**.
 
+## Deltas aprendidos en la E2.8 (CPU die-temp vía helper elevado)
+
+- **Patrón helper establecido**: Monitor nunca elevado (`asInvoker`); `Monitor.TempHelper.exe` corre por tarea `MonitorTempHelper` (LogonTrigger + HighestAvailable + PT0S), IPC por archivo atómico (`cpu_temp.bin`, magic+tick+double, freshness 10 s), activación con **UAC único** (dialog → `runas schtasks` → `runas` helper). Reutilizable para cualquier necesidad elevada futura.
+- **Fallback CPU temp**: helper fresco > Thermal Zone > `--`. Sin activar, todo queda como en E2.
+- PawnIO port con bins **hash-idénticos** al vendor (LGPL-2.1 + COPYING + notices). `pawnio::Init()` no elevado → `NoAdmin` limpio, sin UAC ni hang (verificado en vivo).
+- **Lección de orquestación**: el cierre del builder se colgó (tarea "running" sin compilador vivo 16 min). Diagnóstico rápido: `Get-Process g++,make` + timestamps de los exes. Si está colado, el orquestador toma el cierre mecánico (rebuild+test+push) él mismo.
+- PowerShell: `$?` dentro de strings dobles se evalúa en PS (creó un archivo `NUL`, borrado con `del \\?\...`); scripts bash complejos van por archivo `.sh` temporario, no inline.
+
 ## Skeletons
 
 ### Etapa 1 — Métricas nativas sin admin
