@@ -13,10 +13,14 @@ rem Every lang\*.txt is a built-in UI language: joined into one resource, each a
 (for %%f in (lang\*.txt) do (echo @file %%~nf& type "%%f"& echo.)) > build\languages.txt
 windres -i res\app.rc -o build\app_res.o --include-dir res --include-dir build || exit /b 1
 set SOURCES=
-for %%f in (src\*.cpp src\drivers\*.cpp src\metrics\*.cpp) do set SOURCES=!SOURCES! %%f
+for %%f in (src\*.cpp src\drivers\*.cpp src\metrics\*.cpp) do if /I not "%%f"=="src\temp_helper.cpp" set SOURCES=!SOURCES! %%f
 g++ -std=c++17 -Os -municode -mwindows -static -s -ffunction-sections -fdata-sections -Wl,--gc-sections ^
     -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00 -Wall -Wno-missing-field-initializers ^
     !SOURCES! ^
     build\app_res.o -o Monitor.exe ^
     -lhid -lsetupapi -lcfgmgr32 -lole32 -loleaut32 -lcomctl32 -lgdi32 -lruntimeobject -lws2_32 -lwinhttp -lbcrypt -lversion -lbluetoothapis || exit /b 1
 echo Built Monitor.exe
+g++ -std=c++17 -Os -municode -mwindows -static -s -ffunction-sections -fdata-sections -Wl,--gc-sections ^
+    -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00 -Wall -Wno-missing-field-initializers ^
+    src\temp_helper.cpp src\metrics\pawnio.cpp build\app_res.o -o Monitor.TempHelper.exe || exit /b 1
+echo Built Monitor.TempHelper.exe

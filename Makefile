@@ -3,17 +3,22 @@ CXX      ?= g++
 WINDRES  ?= windres
 VERSION  ?= 0.0.0
 CHANNEL  ?= dev
-.DEFAULT_GOAL := Monitor.exe
+.DEFAULT_GOAL := all
 CXXFLAGS ?= -std=c++17 -Os -Wall -Wno-missing-field-initializers -ffunction-sections -fdata-sections \
             -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00
 LDFLAGS  ?= -municode -mwindows -static -s -Wl,--gc-sections
 LIBS     := -lhid -lsetupapi -lcfgmgr32 -lole32 -loleaut32 -lcomctl32 -lgdi32 -lruntimeobject -lws2_32 -lwinhttp -lbcrypt -lversion -lbluetoothapis
 
-SRC := $(wildcard src/*.cpp) $(wildcard src/drivers/*.cpp) $(wildcard src/metrics/*.cpp)
+SRC := $(filter-out src/temp_helper.cpp,$(wildcard src/*.cpp)) $(wildcard src/drivers/*.cpp) $(wildcard src/metrics/*.cpp)
 OBJ := $(patsubst src/%.cpp,build/%.o,$(SRC)) build/app_res.o
+
+all: Monitor.exe Monitor.TempHelper.exe
 
 Monitor.exe: $(OBJ)
 	$(CXX) $(LDFLAGS) $^ -o $@ $(LIBS)
+
+Monitor.TempHelper.exe: build/temp_helper.o build/metrics/pawnio.o build/app_res.o
+	$(CXX) $(LDFLAGS) $^ -o $@
 
 build/%.o: src/%.cpp $(wildcard src/*.h src/drivers/*.h src/metrics/*.h) build/version.h
 	@mkdir -p $(dir $@)
@@ -32,7 +37,7 @@ build/app_res.o: res/app.rc res/app.manifest res/app.ico res/app_light.ico build
 	$(WINDRES) -i $< -o $@ --include-dir res --include-dir build
 
 clean:
-	rm -rf build Monitor.exe
+	rm -rf build Monitor.exe Monitor.TempHelper.exe
 
 test: test-update-core test-update-win test-update-signature test-metrics test-overflow test-temp-file
 	@mkdir -p build
@@ -148,4 +153,4 @@ test-temp-file:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra tests/temp_file_test.cpp -o build/temp_file_test.exe
 	./build/temp_file_test.exe
 
-.PHONY: clean test test-update-core test-update-win test-update-signature test-metrics test-overflow test-temp-file FORCE
+.PHONY: all clean test test-update-core test-update-win test-update-signature test-metrics test-overflow test-temp-file FORCE
