@@ -11,6 +11,7 @@
 #include <cwchar>
 
 #include "metrics.h"
+#include "temp_file.h"
 
 namespace metrics {
 namespace {
@@ -155,7 +156,37 @@ bool HasLuid(const wchar_t* s) {
     return false;
 }
 
-void ReadCpuTemp(Snapshot& out) {
+bool ReadHelperTemp(double& tempC) {
+    wchar_t localAppData[MAX_PATH]{};
+    DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", localAppData, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) return false;
+    wchar_t path[MAX_PATH]{};
+    if (std::swprintf(path, MAX_PATH, L"%ls\\Monitor\\cpu_temp.bin", localAppData) < 0) return false;
+
+    HANDLE h = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                           nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return false;
+
+    TempFileData buf{};
+    DWORD got = 0;
+    BOOL ok = ReadFile(h, &buf, sizeof(buf), &got, nullptr);
+    CloseHandle(h);
+    if (!ok || got != sizeof(buf)) return false;
+
+    TempFileData data{};
+    if (!ParseTempFile(&buf, got, data) || !FreshTemp(data, GetTickCount64())) return false;
+    tempC = data.tempC;
+    return true;
+}
+
+void ReadCpuTemp(Snapshot& out, bool pdhOk) {
+    double helperTemp = 0.0;
+    if (ReadHelperTemp(helperTemp)) {
+        out.val[static_cast<int>(Id::CpuTemp)] = helperTemp;
+        out.ok[static_cast<int>(Id::CpuTemp)] = true;
+        return;
+    }
+    if (!pdhOk || !g_cTherm) return;
     DWORD n = 0;
     double mx = 0.0;
     PDH_FMT_COUNTERVALUE_ITEM_W* it = PdhItems(g_cTherm, &n);
@@ -368,11 +399,12 @@ bool TakeSnapshot(Snapshot& out) {
     EnsureInit();
     ReadCpu(out);
     ReadRam(out);
-    if (g_q && p_PdhCollectQueryData(g_q) == ERROR_SUCCESS) {
-        if (g_cTherm) ReadCpuTemp(out);
+    bool pdhOk = g_q && p_PdhCollectQueryData(g_q) == ERROR_SUCCESS;
+    if (pdhOk) {
         if (g_cEng) ReadGpuUsage(out);
         if (g_cMem) ReadVram(out);
     }
+    ReadCpuTemp(out, pdhOk);
     ReadGpuTemp(out);
     ReadDisk(out);
     return true;

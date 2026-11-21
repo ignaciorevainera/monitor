@@ -235,3 +235,5 @@ Word =
 Both = 
 Reset position = 
 Open Task Manager = 
+Turn on CPU temperature... = 
+CPU temperature requires a one-time administrator prompt to install a background helper task (MonitorTempHelper) that reads the sensor at logon.\n\nClosing Monitor or hiding this metric keeps the task installed. = 

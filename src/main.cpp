@@ -1,6 +1,7 @@
 // Monitor - tray app showing the battery level of wireless mice, headsets and Bluetooth devices.
 #include <windows.h>
 #include <shellapi.h>
+#include <sddl.h>
 #include <dbt.h>
 #include <initguid.h>
 #include <hidclass.h>
@@ -29,6 +30,7 @@
 #include "update_win.h"
 #include "update_apply.h"
 #include "metrics/metrics.h"
+#include "metrics/pawnio.h"
 
 namespace {
 
@@ -53,6 +55,7 @@ enum MenuId : UINT {
     ID_OFFSET_LEFT, ID_OFFSET_RIGHT, ID_OFFSET_RESET, ID_TASKMGR,
     ID_METRIC_GROUP = 150,
     ID_LABEL_FIRST = 151,  // "Component label": ID_LABEL_FIRST + 0..2
+    ID_CPU_TEMP_ON = 154,
     ID_POLL_FIRST = 500,  // "Check battery every": ID_POLL_FIRST + 0..7
     ID_METRIC_INTERVAL_FIRST = 600,  // "Refresh rate": ID_METRIC_INTERVAL_FIRST + 0..2
     ID_METRIC_WHERE_FIRST = 700,     // per-metric location: ID_METRIC_WHERE_FIRST + id * 4 + where
@@ -1028,6 +1031,118 @@ void MoveEntry(const std::wstring& key, int dir) {
     UpdateWidget();
 }
 
+void XmlEscape(wchar_t* out, size_t cap, const wchar_t* in) {
+    size_t o = 0;
+    for (; *in && o + 7 < cap; in++) {
+        const wchar_t* r = (*in == L'&') ? L"&amp;" : (*in == L'<') ? L"&lt;" : (*in == L'>') ? L"&gt;" : nullptr;
+        if (r) {
+            size_t len = wcslen(r);
+            std::wcsncpy(out + o, r, len);
+            o += len;
+        } else {
+            out[o++] = *in;
+        }
+    }
+    out[o] = 0;
+}
+
+bool CurrentUserSid(wchar_t* out, size_t cap) {
+    HANDLE tok = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &tok)) return false;
+    BYTE buf[256]{};
+    DWORD got = 0;
+    LPWSTR str = nullptr;
+    bool ok = false;
+    if (GetTokenInformation(tok, TokenUser, buf, sizeof(buf), &got) &&
+        ConvertSidToStringSidW(reinterpret_cast<TOKEN_USER*>(buf)->User.Sid, &str)) {
+        wcsncpy(out, str, cap - 1);
+        out[cap - 1] = 0;
+        LocalFree(str);
+        ok = true;
+    }
+    CloseHandle(tok);
+    return ok;
+}
+
+void ActivateCpuTemp() {
+    pawnio::PioState st = pawnio::Init();
+    if (st == pawnio::PioState::Ok) return;
+    if (st != pawnio::PioState::NoAdmin) return;
+
+    const std::wstring msg = T(L"CPU temperature requires a one-time administrator prompt to install a background helper task (MonitorTempHelper) that reads the sensor at logon.\n\nClosing Monitor or hiding this metric keeps the task installed.");
+    if (MessageBoxW(g_hwnd, msg.c_str(), T(L"CPU temperature"), MB_OKCANCEL | MB_ICONINFORMATION) != IDOK) {
+        return;
+    }
+
+    wchar_t exePath[MAX_PATH]{};
+    DWORD n = GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) return;
+    wchar_t* slash = wcsrchr(exePath, L'\\');
+    if (!slash) return;
+    slash[1] = 0;
+
+    wchar_t helperPath[MAX_PATH]{};
+    if (std::swprintf(helperPath, MAX_PATH, L"%lsMonitor.TempHelper.exe", exePath) < 0) return;
+    if (GetFileAttributesW(helperPath) == INVALID_FILE_ATTRIBUTES) return;
+
+    wchar_t sid[184]{};
+    if (!CurrentUserSid(sid, ARRAYSIZE(sid))) return;
+    wchar_t esc[MAX_PATH * 5]{};
+    XmlEscape(esc, ARRAYSIZE(esc), helperPath);
+
+    wchar_t xml[3072]{};
+    std::swprintf(xml, ARRAYSIZE(xml),
+        L"\xFEFF<?xml version=\"1.0\" encoding=\"UTF-16\"?>\r\n"
+        L"<Task version=\"1.2\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">"
+        L"<Triggers><LogonTrigger><Enabled>true</Enabled><UserId>%ls</UserId></LogonTrigger></Triggers>"
+        L"<Principals><Principal id=\"Author\"><UserId>%ls</UserId><LogonType>InteractiveToken</LogonType>"
+        L"<RunLevel>HighestAvailable</RunLevel></Principal></Principals>"
+        L"<Settings><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>"
+        L"<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><ExecutionTimeLimit>PT0S</ExecutionTimeLimit>"
+        L"<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><Priority>5</Priority></Settings>"
+        L"<Actions Context=\"Author\"><Exec><Command>%ls</Command></Exec></Actions></Task>",
+        sid, sid, esc);
+
+    wchar_t tempDir[MAX_PATH]{};
+    wchar_t xmlPath[MAX_PATH]{};
+    if (!GetTempPathW(MAX_PATH, tempDir) ||
+        std::swprintf(xmlPath, MAX_PATH, L"%lsMonitorTempHelper.xml", tempDir) < 0) {
+        return;
+    }
+
+    HANDLE f = CreateFileW(xmlPath, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return;
+    DWORD written = 0;
+    BOOL wrote = WriteFile(f, xml, static_cast<DWORD>(wcslen(xml) * sizeof(wchar_t)), &written, nullptr);
+    CloseHandle(f);
+    if (!wrote) {
+        DeleteFileW(xmlPath);
+        return;
+    }
+
+    wchar_t args[MAX_PATH + 64]{};
+    std::swprintf(args, ARRAYSIZE(args), L"/Create /F /TN MonitorTempHelper /XML \"%ls\"", xmlPath);
+    SHELLEXECUTEINFOW sei{};
+    sei.cbSize = sizeof(sei);
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+    sei.hwnd = g_hwnd;
+    sei.lpVerb = L"runas";
+    sei.lpFile = L"schtasks.exe";
+    sei.lpParameters = args;
+    sei.nShow = SW_HIDE;
+    bool taskOk = false;
+    if (ShellExecuteExW(&sei) && sei.hProcess) {
+        WaitForSingleObject(sei.hProcess, 15000);
+        DWORD code = 1;
+        if (GetExitCodeProcess(sei.hProcess, &code) && code == 0) taskOk = true;
+        CloseHandle(sei.hProcess);
+    }
+    DeleteFileW(xmlPath);
+    if (!taskOk) return;
+
+    ShellExecuteW(g_hwnd, L"runas", helperPath, nullptr, nullptr, SW_HIDE);
+}
+
 void ShowMenu() {
     ApplyMenuTheme(g_lightTaskbar);
     HMENU m = CreatePopupMenu();
@@ -1133,6 +1248,18 @@ void ShowMenu() {
         AppendMenuW(lbl, MF_STRING, ID_LABEL_FIRST + 2, T(L"Both"));
         CheckMenuRadioItem(lbl, ID_LABEL_FIRST, ID_LABEL_FIRST + 2, ID_LABEL_FIRST + g_metricLabelStyle, MF_BYCOMMAND);
         AppendMenuW(mm, MF_POPUP, (UINT_PTR)lbl, T(L"Component label"));
+        if (!g_metricSnap.ok[static_cast<int>(metrics::Id::CpuTemp)]) {
+            static pawnio::PioState pioState = pawnio::PioState::Failed;
+            static bool pioChecked = false;
+            if (!pioChecked) {
+                pioState = pawnio::Init();
+                pioChecked = true;
+            }
+            if (pioState == pawnio::PioState::NoAdmin || pioState == pawnio::PioState::NoModule) {
+                AppendMenuW(mm, MF_SEPARATOR, 0, nullptr);
+                AppendMenuW(mm, MF_STRING, ID_CPU_TEMP_ON, T(L"Turn on CPU temperature..."));
+            }
+        }
         AppendMenuW(m, MF_POPUP, (UINT_PTR)mm, T(L"System metrics"));
     }
     AppendMenuW(m, MF_STRING | (g_wantWidget ? 0 : MF_GRAYED), ID_OFFSET_LEFT, T(L"Move left"));
@@ -1215,6 +1342,9 @@ void ShowMenu() {
             g_groupTempsWithUsage = !g_groupTempsWithUsage;
             SaveGroupTempsWithUsage(g_groupTempsWithUsage);
             UpdateWidget();
+            break;
+        case ID_CPU_TEMP_ON:
+            ActivateCpuTemp();
             break;
         case ID_MODE_WIDGET: SetMode(true); break;
         case ID_MODE_TRAY: SetMode(false); break;
