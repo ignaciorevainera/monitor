@@ -383,6 +383,48 @@ void AdjustTaskbarOffset(int delta) {
     widget::Reposition();
 }
 
+void MigrateTraySense() {
+    DWORD migrated = 0, sz = sizeof(migrated);
+    if (RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, L"MigratedTraySense", RRF_RT_REG_DWORD, nullptr, &migrated, &sz) == ERROR_SUCCESS && migrated != 0) {
+        return;
+    }
+    auto setFlag = []() {
+        DWORD one = 1;
+        RegSetKeyValueW(HKEY_CURRENT_USER, kSettingsKey, L"MigratedTraySense", REG_DWORD, &one, sizeof(one));
+    };
+    DWORD whereSz = 0;
+    if (RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, L"MetricsWhere", RRF_RT_ANY, nullptr, nullptr, &whereSz) == ERROR_SUCCESS) {
+        setFlag();
+        return;
+    }
+    HKEY trayKey = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\TraySense", 0, KEY_READ, &trayKey) == ERROR_SUCCESS) {
+        DWORD val = 0, type = 0, valSz = sizeof(val);
+        if (RegQueryValueExW(trayKey, L"Mask2", nullptr, &type, reinterpret_cast<BYTE*>(&val), &valSz) == ERROR_SUCCESS &&
+            type == REG_DWORD && valSz == sizeof(DWORD)) {
+            metrics::Where where[metrics::kCount];
+            for (int i = 0; i < metrics::kCount; i++) {
+                where[i] = (val & (1u << i)) ? metrics::Where::Bar : metrics::Where::Hidden;
+            }
+            RegSetKeyValueW(HKEY_CURRENT_USER, kSettingsKey, L"MetricsWhere", REG_BINARY,
+                            where, static_cast<DWORD>(sizeof(where)));
+        }
+        valSz = sizeof(val);
+        if (RegQueryValueExW(trayKey, L"Interval", nullptr, &type, reinterpret_cast<BYTE*>(&val), &valSz) == ERROR_SUCCESS &&
+            type == REG_DWORD && valSz == sizeof(DWORD)) {
+            SaveMetricIntervalMs(std::clamp<DWORD>(val, 1000, 5000));
+        }
+        valSz = sizeof(val);
+        if (RegQueryValueExW(trayKey, L"Offset", nullptr, &type, reinterpret_cast<BYTE*>(&val), &valSz) == ERROR_SUCCESS &&
+            type == REG_DWORD && valSz == sizeof(DWORD)) {
+            DWORD out = static_cast<DWORD>(std::clamp(static_cast<int>(val), -2000, 2000));
+            RegSetKeyValueW(HKEY_CURRENT_USER, kSettingsKey, L"TaskbarOffset", REG_DWORD, &out, sizeof(out));
+        }
+        RegCloseKey(trayKey);
+    }
+    setFlag();
+}
+
 bool AutostartEnabled() {
     wchar_t buf[MAX_PATH * 2];
     DWORD sz = sizeof(buf);
@@ -1751,6 +1793,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     g_metricLabelStyle = LoadMetricLabelStyle();
     g_stacked = LoadStacked();
     g_pollIntervalMs = LoadPollSeconds() * 1000;
+    MigrateTraySense();
     LoadMetricsWhere();
     g_metricIntervalMs = LoadMetricIntervalMs();
     widget::SetStacked(g_stacked);
