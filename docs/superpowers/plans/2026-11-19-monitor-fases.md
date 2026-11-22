@@ -11,10 +11,11 @@ Estado: 19-11-2026. Spec: `docs/monitor-spec.md` (decisiones D1–D15).
 
 | Etapa | Plan detallado | Estado |
 |---|---|---|
-| 0 — Fundación | `2026-11-19-monitor-etapa-0.md` | **Detallado** |
-| 1 — Métricas nativas sin admin | pendiente (`<fecha>-monitor-etapa-1.md`) | Skeleton |
-| 2 — Temperaturas sin admin | pendiente | Skeleton |
-| 3 — Una sola app | pendiente | Skeleton |
+| 0 — Fundación | `2026-11-19-monitor-etapa-0.md` | ✅ Completada |
+| E1.5 / E2.5 / E2.6 / E2.7 / E2.8 — interacción y refinamiento | `2026-11-2X-monitor-eX.X.md` | ✅ Completadas |
+| 1 — Métricas nativas sin admin | `2026-11-20-monitor-etapa-1.md` | ✅ Completada |
+| 2 — Temperaturas sin admin | `2026-11-20-monitor-etapa-2.md` | ✅ Completada |
+| 3 — Una sola app | `2026-11-21-monitor-e3.md` | ✅ **Completada 21-11** — reboot test del usuario OK: Monitor es la única app de monitoreo instalada; TraySense retirado; helper elevado activo |
 | 4 — Pulido | pendiente | Skeleton |
 | 5 — Distribución | pendiente | Skeleton |
 
