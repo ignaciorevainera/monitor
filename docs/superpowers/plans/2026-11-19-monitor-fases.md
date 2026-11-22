@@ -103,6 +103,14 @@ Estado: 19-11-2026. Spec: `docs/monitor-spec.md` (decisiones D1–D15).
 - README completo Monitor-céntrico con claims verificados contra el código.
 - Zero REJECT en esta pasada.
 
+## Deltas aprendidos en la E4.5 (alertas de uso + umbral configurable)
+
+- **Gap de despliegue cubierto**: lo instalado (0.1.1) no tenía E4/E4.5; ahora 0.1.2 instalado con verificación sobre lo instalado (no sobre el repo). Lección: cada cierre debe instalar y verificar la build instalada; "no veo X" casi siempre es binario viejo.
+- **El setup se cuelga si la app está corriendo** (`PrepareToInstall` espera el cierre): hacer `--quit` antes de `/VERYSILENT`. Con la app cerrada, la instalación per-user desde el harness funciona sin UAC.
+- **Presets decoplados**: alerta de temp usa preset (70/75/80, default 75) con crit = preset+10; el color sigue D11 (80/90). Alertas de uso RAM/VRAM con umbral 85/90/95 (default 90), rising-edge + latch silencioso.
+- Los defaults **no se escriben al registro** hasta que el usuario cambia un valor (Load con defaults) — no confundirlo con pérdida. Para fijarlos, tocarlos desde el menú.
+- Herdr: al reiniciarse el core, los hijos viejos quedan con parent muerto y sus `hc send t38` fallan; matar huérfanos, relanzar con la terminal actual, y actualizar watcher scripts.
+
 ## Skeletons
 
 ### Etapa 1 — Métricas nativas sin admin
