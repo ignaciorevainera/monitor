@@ -31,6 +31,7 @@
 #include "update_apply.h"
 #include "metrics/metrics.h"
 #include "metrics/pawnio.h"
+#include "metrics/temp_alerts.h"
 
 namespace {
 
@@ -56,6 +57,7 @@ enum MenuId : UINT {
     ID_METRIC_GROUP = 150,
     ID_LABEL_FIRST = 151,  // "Component label": ID_LABEL_FIRST + 0..2
     ID_CPU_TEMP_ON = 154,
+    ID_TEMP_ALERTS = 155,
     ID_POLL_FIRST = 500,  // "Check battery every": ID_POLL_FIRST + 0..7
     ID_METRIC_INTERVAL_FIRST = 600,  // "Refresh rate": ID_METRIC_INTERVAL_FIRST + 0..2
     ID_METRIC_WHERE_FIRST = 700,     // per-metric location: ID_METRIC_WHERE_FIRST + id * 4 + where
@@ -83,6 +85,9 @@ DWORD g_metricIntervalMs = 5000;
 metrics::Config g_metricCfg = metrics::kDefaultConfig;
 metrics::Snapshot g_metricSnap{};
 bool g_hasMetricSnap = false;
+bool g_tempAlerts = true;
+bool g_tempSeenOk[metrics::kCount]{};
+bool g_tempLatched[metrics::kCount]{};
 struct MetricTrayEntry {
     bool added = false;
     HICON icon = nullptr;
@@ -328,6 +333,8 @@ bool LoadBrandColors() { return LoadBoolSetting(L"BrandColors", false); }
 void SaveBrandColors(bool on) { SaveBoolSetting(L"BrandColors", on); }
 bool LoadGroupTempsWithUsage() { return LoadBoolSetting(L"GroupTempsWithUsage", false); }
 void SaveGroupTempsWithUsage(bool on) { SaveBoolSetting(L"GroupTempsWithUsage", on); }
+bool LoadTempAlerts() { return LoadBoolSetting(L"TempAlerts", true); }
+void SaveTempAlerts(bool on) { SaveBoolSetting(L"TempAlerts", on); }
 int LoadMetricLabelStyle() {
     DWORD v = 0, sz = sizeof(v);
     RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, L"MetricLabelStyle", RRF_RT_REG_DWORD, nullptr, &v, &sz);
@@ -625,6 +632,47 @@ void ShowBatteryAlert(TrayEntry& e) {
              L"Monitor", title.c_str(), message);
     g_alertIconAdded = true;
     SetTimer(g_hwnd, TIMER_ALERT_ICON, 60 * 1000, nullptr);
+}
+
+void ShowTempAlert(int id, double tempC) {
+    const std::wstring title = T(L"High temperature");
+    const std::wstring formatted = metrics::FormatTemp(tempC, true);
+    const std::wstring message = TF(L"{name}: {temp}",
+                                    { { L"name", T(kMetrics[id].name) }, { L"temp", formatted } });
+    if (g_metricTray[id].added && g_metricTray[id].icon) {
+        TrayCall(NIM_MODIFY, metrics::kTrayUidBase + static_cast<UINT>(id), g_metricTray[id].icon,
+                 std::wstring(T(kMetrics[id].name)) + L": " + formatted, title.c_str(), message);
+        return;
+    }
+    if (!g_placeholderIcon) g_placeholderIcon = RenderIcon(L"-", -1, Foreground(), Foreground(), true);
+    TrayCall(g_alertIconAdded ? NIM_MODIFY : NIM_ADD, ALERT_ICON_ID, g_placeholderIcon,
+             L"Monitor", title.c_str(), message);
+    g_alertIconAdded = true;
+    SetTimer(g_hwnd, TIMER_ALERT_ICON, 60 * 1000, nullptr);
+}
+
+void EvaluateTempAlerts(const metrics::Snapshot& snap) {
+    constexpr metrics::Id kTempIds[] = { metrics::Id::CpuTemp, metrics::Id::GpuTemp, metrics::Id::SsdTemp };
+    for (metrics::Id mid : kTempIds) {
+        const int id = static_cast<int>(mid);
+        if (!snap.ok[id]) continue;
+        const int sev = metrics::SeverityFor(id, snap.val[id]);
+        if (!g_tempSeenOk[id]) {
+            g_tempSeenOk[id] = true;
+            if (metrics::FirstHotSample(sev)) g_tempLatched[id] = true;
+            continue;
+        }
+        if (metrics::ResetLatch(sev)) {
+            g_tempLatched[id] = false;
+            continue;
+        }
+        if (metrics::ShouldNotifyTemp(sev, g_tempLatched[id])) {
+            g_tempLatched[id] = true;
+            if (g_tempAlerts && g_metricCfg.where[id] != metrics::Where::Hidden) {
+                ShowTempAlert(id, snap.val[id]);
+            }
+        }
+    }
 }
 
 void UpdatePlaceholder() {
@@ -1284,6 +1332,7 @@ void ShowMenu() {
         if (checkedRate) CheckMenuRadioItem(rate, ID_METRIC_INTERVAL_FIRST, ID_METRIC_INTERVAL_FIRST + rateCount - 1, checkedRate, MF_BYCOMMAND);
         AppendMenuW(mm, MF_POPUP, (UINT_PTR)rate, T(L"Refresh rate"));
         AppendMenuW(mm, MF_STRING | (g_groupTempsWithUsage ? MF_CHECKED : 0), ID_METRIC_GROUP, T(L"Group temperature with usage"));
+        AppendMenuW(mm, MF_STRING | (g_tempAlerts ? MF_CHECKED : 0), ID_TEMP_ALERTS, T(L"Temperature alerts"));
         HMENU lbl = CreatePopupMenu();
         AppendMenuW(lbl, MF_STRING, ID_LABEL_FIRST + 0, T(L"Icon"));
         AppendMenuW(lbl, MF_STRING, ID_LABEL_FIRST + 1, T(L"Word"));
@@ -1387,6 +1436,10 @@ void ShowMenu() {
             break;
         case ID_CPU_TEMP_ON:
             ActivateCpuTemp();
+            break;
+        case ID_TEMP_ALERTS:
+            g_tempAlerts = !g_tempAlerts;
+            SaveTempAlerts(g_tempAlerts);
             break;
         case ID_MODE_WIDGET: SetMode(true); break;
         case ID_MODE_TRAY: SetMode(false); break;
@@ -1531,6 +1584,7 @@ LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
                 g_metricSnap = *s;
                 g_hasMetricSnap = true;
                 delete s;
+                EvaluateTempAlerts(g_metricSnap);
                 if (changed) {
                     UpdateWidget();
                     ApplyAllMetricTray();
@@ -1790,6 +1844,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     g_widgetBackground = LoadWidgetBackground();
     g_brandColors = LoadBrandColors();
     g_groupTempsWithUsage = LoadGroupTempsWithUsage();
+    g_tempAlerts = LoadTempAlerts();
     g_metricLabelStyle = LoadMetricLabelStyle();
     g_stacked = LoadStacked();
     g_pollIntervalMs = LoadPollSeconds() * 1000;

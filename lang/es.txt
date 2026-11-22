@@ -242,3 +242,6 @@ Reset position = Restablecer posición
 Open Task Manager = Abrir Administrador de tareas
 Turn on CPU temperature... = Activar temperatura de CPU...
 CPU temperature requires a one-time administrator prompt to install a background helper task (MonitorTempHelper) that reads the sensor at logon.\n\nClosing Monitor or hiding this metric keeps the task installed. = La temperatura de CPU requiere un único permiso de administrador para instalar una tarea en segundo plano (MonitorTempHelper) que lee el sensor al iniciar sesión.\n\nCerrar Monitor u ocultar esta métrica mantiene la tarea instalada.
+Temperature alerts = Alertas de temperatura
+High temperature = Temperatura alta
+{name}: {temp} = {name}: {temp}
