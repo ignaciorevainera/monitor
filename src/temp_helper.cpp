@@ -68,8 +68,17 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         CloseHandle(singleMutex);
         return 1;
     }
+    wchar_t stopPath[MAX_PATH]{};
+    std::swprintf(stopPath, MAX_PATH, L"%ls\\stop.flag", dirPath);
 
     for (;;) {
+        // The installer asks the elevated helper to exit by creating this flag, so its
+        // own exe is unlocked when the setup replaces it.
+        if (GetFileAttributesW(stopPath) != INVALID_FILE_ATTRIBUTES) {
+            DeleteFileW(stopPath);
+            CloseHandle(singleMutex);
+            return 0;
+        }
         TempFileData data{};
         data.magic = kTempFileMagic;
         double tempC = 0.0;

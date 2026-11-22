@@ -54,6 +54,7 @@ Name: "{autoprograms}\Monitor"; Filename: "{app}\Monitor.exe"
 
 [Run]
 Filename: "{app}\Monitor.exe"; Description: "Start Monitor now"; Flags: nowait postinstall skipifsilent; Check: not IsUpdate
+Filename: "{cmd}"; Parameters: "/c schtasks /Run /TN MonitorTempHelper"; Flags: runhidden; StatusMsg: "Restarting the temperature helper..."
 Filename: "https://ko-fi.com/krisgfx"; Description: "Enjoying Monitor? Support it on Ko-fi"; Flags: shellexec postinstall unchecked skipifsilent nowait runasoriginaluser
 
 [UninstallRun]
@@ -62,6 +63,29 @@ Filename: "{app}\Monitor.exe"; Parameters: "--quit"; Flags: runhidden waituntilt
 [Code]
 const
   RunKey = 'Software\Microsoft\Windows\CurrentVersion\Run';
+
+{ The elevated temperature helper polls for this flag every two seconds and exits on
+  its own, which unlocks Monitor.TempHelper.exe before the setup replaces it. }
+procedure StopTempHelper();
+var
+  FlagPath: String;
+  I: Integer;
+begin
+  FlagPath := ExpandConstant('{localappdata}\Monitor\stop.flag');
+  ForceDirectories(ExtractFileDir(FlagPath));
+  if not SaveStringToFile(FlagPath, '1', False) then
+    Exit;
+  for I := 1 to 20 do
+  begin
+    Sleep(250);
+    if not FileExists(FlagPath) then
+    begin
+      Sleep(750);  { the helper deleted the flag; give the process time to exit }
+      Exit;
+    end;
+  end;
+  DeleteFile(FlagPath);  { no helper running: do not leave a flag for the next one }
+end;
 
 function IsUpdate(): Boolean;
 begin
@@ -84,6 +108,9 @@ end;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   Result := '';
+  { Ask the elevated temperature helper to exit by itself so its exe is not locked
+    while this setup replaces it. It checks this flag every two seconds. }
+  StopTempHelper();
   if IsUpdate() and not QuitRunningApp() then
     Result := 'Monitor could not close. Close it and try updating again.';
 end;
