@@ -624,24 +624,25 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
             int inlineW = s.inlineTemp >= 0 ? Px(4) + out[s.inlineTemp].m.w : 0;
             int rowW = wordW + lb.m.w + boltW + inlineW;
             int rx = (barW - rowW) / 2;
+            int rowH = s.word >= 0 ? std::max(out[s.word].m.h, lb.m.h) : lb.m.h;
             if (s.word >= 0) {
                 out[s.word].px = rx;
-                out[s.word].py = y;
+                out[s.word].py = y + (rowH - out[s.word].m.h) / 2;
                 rx += wordW;
             }
             lb.px = rx;
-            lb.py = y;
+            lb.py = y + (rowH - lb.m.h) / 2;
             rx += lb.m.w;
             if (s.bolt >= 0) {
                 out[s.bolt].px = rx + Px(2);
-                out[s.bolt].py = y + (lb.m.h - out[s.bolt].m.h) / 2;
+                out[s.bolt].py = y + (rowH - out[s.bolt].m.h) / 2;
                 rx += boltW;
             }
             if (s.inlineTemp >= 0) {
                 out[s.inlineTemp].px = rx + Px(4);
-                out[s.inlineTemp].py = y + (lb.m.h - out[s.inlineTemp].m.h) / 2;
+                out[s.inlineTemp].py = y + (rowH - out[s.inlineTemp].m.h) / 2;
             }
-            y += lb.m.h + (lb.barPct >= 0 ? barRoom : 0) + itemGap;
+            y += rowH + (lb.barPct >= 0 ? barRoom : 0) + itemGap;
         }
         height = y;
         return out;
@@ -675,18 +676,19 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
                     out[s.bolt].py = top + (iconH - out[s.bolt].m.h) / 2;
                 }
             }
+            int rowH = s.word >= 0 ? std::max(out[s.word].m.h, lb.m.h) : lb.m.h;
             int tx = x + (slotW - textW) / 2;
-            int ty = s.icon >= 0 ? (top + iconH + rowGap) : ((barH - lb.m.h) / 2);
+            int ty = s.icon >= 0 ? (top + iconH + rowGap) : ((barH - rowH) / 2);
             if (s.word >= 0) {
                 out[s.word].px = tx;
-                out[s.word].py = ty;
+                out[s.word].py = ty + (rowH - out[s.word].m.h) / 2;
                 tx += wordW;
             }
             lb.px = tx;
-            lb.py = ty;
+            lb.py = ty + (rowH - lb.m.h) / 2;
             if (s.inlineTemp >= 0) {
                 out[s.inlineTemp].px = lb.px + lb.m.w + Px(4);
-                out[s.inlineTemp].py = ty + (lb.m.h - out[s.inlineTemp].m.h) / 2;
+                out[s.inlineTemp].py = ty + (rowH - out[s.inlineTemp].m.h) / 2;
             }
             x += slotW + itemGap;
         }
