@@ -118,6 +118,13 @@ Estado: 19-11-2026. Spec: `docs/monitor-spec.md` (decisiones D1–D15).
 - Instalación per-user `/VERYSILENT /WBUPDATE=1` exit 0 desde el harness, sin UAC, tras cerrar app y helper.
 - Limpiar `is-*.tmp` que Inno deja cuando un setup se aborta.
 
+## Deltas aprendidos en la E5 (release pública)
+
+- **El ícono del header de notificación no es el del exe**: es el `hIcon` de la entrada de bandeja que dispara el globo. Fijar `AppIcon()` (recurso 1 del exe) como hIcon de la entrada temporal de alertas; el glifo del componente va solo en `hBalloonIcon`.
+- **Cero tags = cero releases**: el job `release` solo corre en tags `v*`. Flujo verificado: tag `v1.0.0` → CI compila y publica solo los 4 assets (setup, portable, SHA256SUMS, source GPL).
+- **Verificación de release**: descargar el asset publicado, comparar SHA-256 contra `SHA256SUMS.txt`, instalarlo y checar ARP + dump. No confiar solo en el artifact del CI.
+- Ícono de la app generado sin dependencias (`scripts/make-app-icon.ps1`): DIB clásico por tamaño (el constructor .NET de Icon no lee entradas PNG), placa redondeada para que lea en claro/oscuro.
+
 ## Skeletons
 
 ### Etapa 1 — Métricas nativas sin admin
