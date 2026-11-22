@@ -32,6 +32,8 @@ Download from the [latest release](https://github.com/ignaciorevainera/monitor/r
 
 Monitor is plain C++/Win32 with no external runtime required.
 
+The binaries are not signed, so SmartScreen may warn the first time you run the installer: choose **More info → Run anyway**. To check a download, compare its SHA-256 against `SHA256SUMS.txt` in the same release.
+
 ## How CPU temperature works
 
 `Monitor.exe` itself **never elevates** and always runs under your normal user account.
