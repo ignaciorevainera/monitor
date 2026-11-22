@@ -39,7 +39,7 @@ build/app_res.o: res/app.rc res/app.manifest res/app.ico res/app_light.ico build
 clean:
 	rm -rf build Monitor.exe Monitor.TempHelper.exe
 
-test: test-update-core test-update-win test-update-signature test-metrics test-overflow test-temp-file test-temp-alerts
+test: test-update-core test-update-win test-update-signature test-metrics test-overflow test-temp-file test-temp-alerts test-usage-alerts
 	@mkdir -p build
 	$(CXX) -std=c++17 -O2 -Wall tests/device_aliases_test.cpp -o build/device_aliases_test.exe
 	./build/device_aliases_test.exe
@@ -158,4 +158,9 @@ test-temp-alerts:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra tests/temp_alerts_test.cpp src/metrics/metrics_format.cpp -o build/temp_alerts_test.exe
 	./build/temp_alerts_test.exe
 
-.PHONY: all clean test test-update-core test-update-win test-update-signature test-metrics test-overflow test-temp-file test-temp-alerts FORCE
+test-usage-alerts:
+	@mkdir -p build
+	$(CXX) -std=c++17 -O2 -Wall -Wextra tests/usage_alerts_test.cpp -o build/usage_alerts_test.exe
+	./build/usage_alerts_test.exe
+
+.PHONY: all clean test test-update-core test-update-win test-update-signature test-metrics test-overflow test-temp-file test-temp-alerts test-usage-alerts FORCE
