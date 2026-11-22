@@ -152,6 +152,7 @@ std::map<std::wstring, bool> g_alertLatches;  // survive transient removal of a 
 bool g_alertIconAdded = false;  // short-lived tray icon for widget-mode notifications
 bool g_placeholder = false;
 HICON g_placeholderIcon = nullptr;
+HICON g_alertIcon = nullptr;  // custom large icon for notification balloons (NIIF_USER)
 
 // User-supplied names are presentation-only, keyed by stable DeviceStatus.key.
 // Driver identity, HID polling, brand detection and device diagnostics are unchanged.
@@ -599,6 +600,56 @@ HICON IconFor(int pct, bool charging, bool dim, Accent accent) {
 
 // ---- tray management --------------------------------------------------------------------------
 
+// Large notification icon: a Segoe Fluent glyph (the app has no finished .ico yet), drawn white
+// on transparent. NIIF_USER replaces the yellow warning triangle with this icon.
+HICON AlertIcon() {
+    if (g_alertIcon) return g_alertIcon;
+    const int S = GetSystemMetrics(SM_CXICON);
+    HDC dc = CreateCompatibleDC(nullptr);
+    BITMAPINFO bi{};
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = S;
+    bi.bmiHeader.biHeight = -S;
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    bi.bmiHeader.biCompression = BI_RGB;
+    void* bits = nullptr;
+    HBITMAP bmp = CreateDIBSection(dc, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
+    if (!bmp) { DeleteDC(dc); return nullptr; }
+    HGDIOBJ old = SelectObject(dc, bmp);
+    auto* px = static_cast<DWORD*>(bits);
+    memset(bits, 0, (size_t)S * S * 4);
+    HFONT f = CreateFontW(-S, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                          ANTIALIASED_QUALITY, DEFAULT_PITCH, L"Segoe Fluent Icons");
+    HGDIOBJ oldF = SelectObject(dc, f);
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, RGB(255, 255, 255));
+    const wchar_t glyph = 0xE7F4;  // TVMonitor
+    TextOutW(dc, 0, 0, &glyph, 1);
+    GdiFlush();
+    SelectObject(dc, oldF);
+    DeleteObject(f);
+    SelectObject(dc, old);
+    for (int i = 0; i < S * S; i++) {  // GDI drew white-on-black: blue channel is the coverage
+        DWORD a = px[i] & 0xFF;
+        px[i] = (a << 24) | 0x00FFFFFFu;
+    }
+    HBITMAP mask = CreateBitmap(S, S, 1, 1, nullptr);
+    {
+        HDC mdc = CreateCompatibleDC(nullptr);
+        HGDIOBJ o = SelectObject(mdc, mask);
+        PatBlt(mdc, 0, 0, S, S, BLACKNESS);
+        SelectObject(mdc, o);
+        DeleteDC(mdc);
+    }
+    ICONINFO ii{ TRUE, 0, 0, mask, bmp };
+    g_alertIcon = CreateIconIndirect(&ii);
+    DeleteObject(mask);
+    DeleteObject(bmp);
+    DeleteDC(dc);
+    return g_alertIcon;
+}
+
 void CopyTip(wchar_t* dst, size_t cap, const std::wstring& s) {
     wcsncpy(dst, s.c_str(), cap - 1);
     dst[cap - 1] = 0;
@@ -632,7 +683,8 @@ void TrayCall(DWORD msg, UINT uid, HICON icon, const std::wstring& tip, const wc
         nid.uFlags |= NIF_INFO;
         CopyTip(nid.szInfoTitle, ARRAYSIZE(nid.szInfoTitle), infoTitle);
         CopyTip(nid.szInfo, ARRAYSIZE(nid.szInfo), info);
-        nid.dwInfoFlags = NIIF_WARNING;
+        nid.dwInfoFlags = NIIF_USER | NIIF_LARGE_ICON | NIIF_RESPECT_QUIET_TIME;
+        nid.hBalloonIcon = AlertIcon();
     }
     Shell_NotifyIconW(msg, &nid);
     if (msg == NIM_ADD) {
@@ -658,8 +710,8 @@ void ShowBatteryAlert(TrayEntry& e) {
     }
     // Windows notification balloons need a tray icon. Keep a temporary one in widget mode
     // long enough for the shell to display the notification, then remove it.
-    if (!g_placeholderIcon) g_placeholderIcon = RenderIcon(L"-", -1, Foreground(), Foreground(), true);
-    TrayCall(g_alertIconAdded ? NIM_MODIFY : NIM_ADD, ALERT_ICON_ID, g_placeholderIcon,
+    if (!g_alertIcon && !AlertIcon()) g_placeholderIcon = g_placeholderIcon ? g_placeholderIcon : RenderIcon(L"-", -1, Foreground(), Foreground(), true);
+    TrayCall(g_alertIconAdded ? NIM_MODIFY : NIM_ADD, ALERT_ICON_ID, g_alertIcon ? g_alertIcon : g_placeholderIcon,
              L"Monitor", title.c_str(), message);
     g_alertIconAdded = true;
     SetTimer(g_hwnd, TIMER_ALERT_ICON, 60 * 1000, nullptr);
@@ -671,8 +723,8 @@ void ShowMetricAlert(int id, const std::wstring& title, const std::wstring& form
                  std::wstring(T(kMetrics[id].name)) + L": " + formatted, title.c_str(), message);
         return;
     }
-    if (!g_placeholderIcon) g_placeholderIcon = RenderIcon(L"-", -1, Foreground(), Foreground(), true);
-    TrayCall(g_alertIconAdded ? NIM_MODIFY : NIM_ADD, ALERT_ICON_ID, g_placeholderIcon,
+    if (!g_alertIcon && !AlertIcon()) g_placeholderIcon = g_placeholderIcon ? g_placeholderIcon : RenderIcon(L"-", -1, Foreground(), Foreground(), true);
+    TrayCall(g_alertIconAdded ? NIM_MODIFY : NIM_ADD, ALERT_ICON_ID, g_alertIcon ? g_alertIcon : g_placeholderIcon,
              L"Monitor", title.c_str(), message);
     g_alertIconAdded = true;
     SetTimer(g_hwnd, TIMER_ALERT_ICON, 60 * 1000, nullptr);
@@ -1097,6 +1149,10 @@ void RedrawAll() {
         DestroyIcon(g_placeholderIcon);
         g_placeholderIcon = nullptr;
         if (g_placeholder) { TrayDelete(PLACEHOLDER_ID); g_placeholder = false; }
+    }
+    if (g_alertIcon) {
+        DestroyIcon(g_alertIcon);
+        g_alertIcon = nullptr;
     }
     for (auto& [k, e] : g_entries) { e.iconSig.clear(); ApplyEntry(e); }
     for (const auto& m : kMetrics) {
