@@ -94,6 +94,15 @@ Estado: 19-11-2026. Spec: `docs/monitor-spec.md` (decisiones D1–D15).
 - **Builder2 reportó un commit inexistente** (`$(git rev-parse...)` sin expandir): el orquestador verifica `git log` antes de confiar en un hash reportado.
 - El helper elevado corriendo **lockea el link de su propio exe**: matarlo antes de rebuilds (o falla el link).
 
+## Deltas aprendidos en la E4 (alertas, overflow, README)
+
+- **Herdr restart perdió la terminal `t38` → `t57`**: los hijos viejos reportaban a `t38` (sesión muerta). Solución: matar hijos huérfanos, relanzar con `hc send t57` en los briefs, y actualizar los watcher scripts. Los mensajes a `t57` llegan como `<hc>` al usuario.
+- **Builder inventó un flag CLI `--metrics-once`** que no existe: cancelado al vuelo (opción 4 del prompt de permiso) y corregido con el flag real `--metrics-dump`. Los builders no inventan flags — el orquestador verifica.
+- **Alertas rising-edge funcionando**: SSD constante 79 → 0 globos (primera muestra caliente latchea en silencio); el cruce durante la sesión dispara una vez por métrica; toggle default ON.
+- **Alineación apilado/vertical centrada**: `rowH = max(word.h, lb.h)` con `(rowH - h) / 2` para word/label/bolt/inlineTemp; estilo Icono byte-idéntico (guard `s.word < 0`).
+- README completo Monitor-céntrico con claims verificados contra el código.
+- Zero REJECT en esta pasada.
+
 ## Skeletons
 
 ### Etapa 1 — Métricas nativas sin admin
