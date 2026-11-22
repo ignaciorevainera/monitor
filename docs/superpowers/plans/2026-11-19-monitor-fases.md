@@ -84,6 +84,15 @@ Estado: 19-11-2026. Spec: `docs/monitor-spec.md` (decisiones D1–D15).
 - **Lección de orquestación**: el cierre del builder se colgó (tarea "running" sin compilador vivo 16 min). Diagnóstico rápido: `Get-Process g++,make` + timestamps de los exes. Si está colado, el orquestador toma el cierre mecánico (rebuild+test+push) él mismo.
 - PowerShell: `$?` dentro de strings dobles se evalúa en PS (creó un archivo `NUL`, borrado con `del \\?\...`); scripts bash complejos van por archivo `.sh` temporario, no inline.
 
+## Deltas aprendidos en la E3 (installer, upgrade, retiro)
+
+- **El harness NO puede elevar**: `Start-Process -Verb RunAs` desde el contexto del agente se auto-cancela (UAC invisible, exit -196608) aunque aparezca en el escritorio del usuario. Además, **este equipo bloquea la elevación de PowerShell** (ni `-File` ni `-Command` trivial dejan rastro). Lo que SÍ funciona: **cmd elevado** (`Start-Process cmd -Verb RunAs`) con XML pre-generado. Regla: los pasos elevados se entregan como paso a paso al usuario desde el arranque — no reintentar.
+- **In-place upgrade verificado dos veces** (0.1.0 y 0.1.1): mismo AppId reusa el dir viejo, `[InstallDelete]` limpia, autostart re-apunta (incluso desde el path del repo), registro/historial intactos. `verify-windows-version` exige que el exe lleve la versión del setup.
+- **Migración TraySense disparada y verificada en vivo**: con `MetricsWhere` ausente importó `Mask2=0x7f` → 7 Bar, `Interval=5000`, flag idempotente.
+- **Forense del registro**: el instalador era inocente (LastWrite de la clave 3 h antes del setup); fue el smoke del builder de E2.7, que restauró solo su propio valor. **Regla nueva: los smokes con registro backupean/restauran la CLAVE completa** (`reg export`/`reg import`), no valores sueltos.
+- **Builder2 reportó un commit inexistente** (`$(git rev-parse...)` sin expandir): el orquestador verifica `git log` antes de confiar en un hash reportado.
+- El helper elevado corriendo **lockea el link de su propio exe**: matarlo antes de rebuilds (o falla el link).
+
 ## Skeletons
 
 ### Etapa 1 — Métricas nativas sin admin
