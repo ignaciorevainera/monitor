@@ -111,6 +111,13 @@ Estado: 19-11-2026. Spec: `docs/monitor-spec.md` (decisiones D1–D15).
 - Los defaults **no se escriben al registro** hasta que el usuario cambia un valor (Load con defaults) — no confundirlo con pérdida. Para fijarlos, tocarlos desde el menú.
 - Herdr: al reiniciarse el core, los hijos viejos quedan con parent muerto y sus `hc send t38` fallan; matar huérfanos, relanzar con la terminal actual, y actualizar watcher scripts.
 
+## Deltas aprendidos en la E4.5 / cierre (instalador y helper)
+
+- **El helper elevado lockea su propio exe**: cualquier in-place upgrade fallaba al reemplazar `Monitor.TempHelper.exe` (Inno: DeleteFile code 5, diálogo modal). **Fix permanente**: el installer escribe `%LOCALAPPDATA%\Monitor\stop.flag`, el helper la consume en su loop y sale solo (sin admin), el setup reemplaza el exe y `schtasks /Run /TN MonitorTempHelper` lo relanza. Transición única con el helper viejo: taskkill elevado manual.
+- **Verificación de instalación = ARP**: comprobar `DisplayVersion` del uninstall key, no solo la FileVersion del exe (las instalaciones abortadas dejan exe nuevos con ARP viejo). Cerrar un pase exige ARP correcto + setup exit 0.
+- Instalación per-user `/VERYSILENT /WBUPDATE=1` exit 0 desde el harness, sin UAC, tras cerrar app y helper.
+- Limpiar `is-*.tmp` que Inno deja cuando un setup se aborta.
+
 ## Skeletons
 
 ### Etapa 1 — Métricas nativas sin admin
