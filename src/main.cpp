@@ -32,6 +32,7 @@
 #include "metrics/metrics.h"
 #include "metrics/pawnio.h"
 #include "metrics/temp_alerts.h"
+#include "metrics/usage_alerts.h"
 
 namespace {
 
@@ -58,6 +59,9 @@ enum MenuId : UINT {
     ID_LABEL_FIRST = 151,  // "Component label": ID_LABEL_FIRST + 0..2
     ID_CPU_TEMP_ON = 154,
     ID_TEMP_ALERTS = 155,
+    ID_USAGE_ALERTS = 156,
+    ID_USAGE_THRESH_FIRST = 157,  // "Usage alerts at": 157..159 (85/90/95%)
+    ID_TEMP_THRESH_FIRST = 160,   // "Temperature alerts at": 160..162 (70/75/80 C)
     ID_POLL_FIRST = 500,  // "Check battery every": ID_POLL_FIRST + 0..7
     ID_METRIC_INTERVAL_FIRST = 600,  // "Refresh rate": ID_METRIC_INTERVAL_FIRST + 0..2
     ID_METRIC_WHERE_FIRST = 700,     // per-metric location: ID_METRIC_WHERE_FIRST + id * 4 + where
@@ -81,13 +85,20 @@ HINSTANCE g_inst;
 HWND g_hwnd;
 HANDLE g_refreshEvt, g_stopEvt, g_worker, g_metricWorker;
 constexpr DWORD METRIC_POLL_SECONDS[] = { 1, 2, 5 };
+constexpr int USAGE_THRESHOLDS[] = { 85, 90, 95 };
+constexpr int TEMP_THRESHOLDS[] = { 70, 75, 80 };
 DWORD g_metricIntervalMs = 5000;
 metrics::Config g_metricCfg = metrics::kDefaultConfig;
 metrics::Snapshot g_metricSnap{};
 bool g_hasMetricSnap = false;
 bool g_tempAlerts = true;
+int g_tempAlertThreshold = 75;
 bool g_tempSeenOk[metrics::kCount]{};
 bool g_tempLatched[metrics::kCount]{};
+bool g_usageAlerts = true;
+int g_usageAlertThreshold = 90;
+bool g_usageSeenOk[metrics::kCount]{};
+bool g_usageLatched[metrics::kCount]{};
 struct MetricTrayEntry {
     bool added = false;
     HICON icon = nullptr;
@@ -335,6 +346,26 @@ bool LoadGroupTempsWithUsage() { return LoadBoolSetting(L"GroupTempsWithUsage", 
 void SaveGroupTempsWithUsage(bool on) { SaveBoolSetting(L"GroupTempsWithUsage", on); }
 bool LoadTempAlerts() { return LoadBoolSetting(L"TempAlerts", true); }
 void SaveTempAlerts(bool on) { SaveBoolSetting(L"TempAlerts", on); }
+bool LoadUsageAlerts() { return LoadBoolSetting(L"UsageAlerts", true); }
+void SaveUsageAlerts(bool on) { SaveBoolSetting(L"UsageAlerts", on); }
+int LoadUsageAlertThreshold() {
+    DWORD v = 90, sz = sizeof(v);
+    RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, L"UsageAlertThreshold", RRF_RT_REG_DWORD, nullptr, &v, &sz);
+    return (v == 85 || v == 90 || v == 95) ? static_cast<int>(v) : 90;
+}
+void SaveUsageAlertThreshold(int pct) {
+    DWORD v = static_cast<DWORD>(pct);
+    RegSetKeyValueW(HKEY_CURRENT_USER, kSettingsKey, L"UsageAlertThreshold", REG_DWORD, &v, sizeof(v));
+}
+int LoadTempAlertThreshold() {
+    DWORD v = 75, sz = sizeof(v);
+    RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, L"TempAlertThreshold", RRF_RT_REG_DWORD, nullptr, &v, &sz);
+    return (v == 70 || v == 75 || v == 80) ? static_cast<int>(v) : 75;
+}
+void SaveTempAlertThreshold(int c) {
+    DWORD v = static_cast<DWORD>(c);
+    RegSetKeyValueW(HKEY_CURRENT_USER, kSettingsKey, L"TempAlertThreshold", REG_DWORD, &v, sizeof(v));
+}
 int LoadMetricLabelStyle() {
     DWORD v = 0, sz = sizeof(v);
     RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, L"MetricLabelStyle", RRF_RT_REG_DWORD, nullptr, &v, &sz);
@@ -634,11 +665,7 @@ void ShowBatteryAlert(TrayEntry& e) {
     SetTimer(g_hwnd, TIMER_ALERT_ICON, 60 * 1000, nullptr);
 }
 
-void ShowTempAlert(int id, double tempC) {
-    const std::wstring title = T(L"High temperature");
-    const std::wstring formatted = metrics::FormatTemp(tempC, true);
-    const std::wstring message = TF(L"{name}: {temp}",
-                                    { { L"name", T(kMetrics[id].name) }, { L"temp", formatted } });
+void ShowMetricAlert(int id, const std::wstring& title, const std::wstring& formatted, const std::wstring& message) {
     if (g_metricTray[id].added && g_metricTray[id].icon) {
         TrayCall(NIM_MODIFY, metrics::kTrayUidBase + static_cast<UINT>(id), g_metricTray[id].icon,
                  std::wstring(T(kMetrics[id].name)) + L": " + formatted, title.c_str(), message);
@@ -651,12 +678,34 @@ void ShowTempAlert(int id, double tempC) {
     SetTimer(g_hwnd, TIMER_ALERT_ICON, 60 * 1000, nullptr);
 }
 
+void ShowTempAlert(int id, double tempC) {
+    const std::wstring formatted = metrics::FormatTemp(tempC, true);
+    const std::wstring message = TF(L"{name}: {temp}",
+                                    { { L"name", T(kMetrics[id].name) }, { L"temp", formatted } });
+    ShowMetricAlert(id, T(L"High temperature"), formatted, message);
+}
+
+void ShowUsageAlert(int id, double pct) {
+    const std::wstring formatted = metrics::FormatPercent(pct, true);
+    const std::wstring message = TF(L"{name}: {value}",
+                                    { { L"name", T(kMetrics[id].name) }, { L"value", formatted } });
+    ShowMetricAlert(id, T(L"High usage"), formatted, message);
+}
+
 void EvaluateTempAlerts(const metrics::Snapshot& snap) {
     constexpr metrics::Id kTempIds[] = { metrics::Id::CpuTemp, metrics::Id::GpuTemp, metrics::Id::SsdTemp };
     for (metrics::Id mid : kTempIds) {
         const int id = static_cast<int>(mid);
         if (!snap.ok[id]) continue;
-        const int sev = metrics::SeverityFor(id, snap.val[id]);
+        int sev = 0;
+        if (mid == metrics::Id::SsdTemp) {
+            sev = metrics::SeverityFor(id, snap.val[id]);
+        } else {
+            const double warn = static_cast<double>(g_tempAlertThreshold);
+            const double crit = warn + 10.0;
+            if (snap.val[id] >= crit) sev = 2;
+            else if (snap.val[id] >= warn) sev = 1;
+        }
         if (!g_tempSeenOk[id]) {
             g_tempSeenOk[id] = true;
             if (metrics::FirstHotSample(sev)) g_tempLatched[id] = true;
@@ -670,6 +719,30 @@ void EvaluateTempAlerts(const metrics::Snapshot& snap) {
             g_tempLatched[id] = true;
             if (g_tempAlerts && g_metricCfg.where[id] != metrics::Where::Hidden) {
                 ShowTempAlert(id, snap.val[id]);
+            }
+        }
+    }
+}
+
+void EvaluateUsageAlerts(const metrics::Snapshot& snap) {
+    constexpr metrics::Id kUsageIds[] = { metrics::Id::RamUsage, metrics::Id::Vram };
+    const double threshold = static_cast<double>(g_usageAlertThreshold);
+    for (metrics::Id mid : kUsageIds) {
+        const int id = static_cast<int>(mid);
+        if (!snap.ok[id] || snap.val[id] < 0.0) continue;
+        if (!g_usageSeenOk[id]) {
+            g_usageSeenOk[id] = true;
+            if (metrics::UsageFirstSampleHot(snap.val[id], threshold)) g_usageLatched[id] = true;
+            continue;
+        }
+        if (metrics::UsageResetLatch(snap.val[id], threshold)) {
+            g_usageLatched[id] = false;
+            continue;
+        }
+        if (metrics::UsageShouldNotify(snap.val[id], threshold, g_usageLatched[id])) {
+            g_usageLatched[id] = true;
+            if (g_usageAlerts && g_metricCfg.where[id] != metrics::Where::Hidden) {
+                ShowUsageAlert(id, snap.val[id]);
             }
         }
     }
@@ -1333,6 +1406,31 @@ void ShowMenu() {
         AppendMenuW(mm, MF_POPUP, (UINT_PTR)rate, T(L"Refresh rate"));
         AppendMenuW(mm, MF_STRING | (g_groupTempsWithUsage ? MF_CHECKED : 0), ID_METRIC_GROUP, T(L"Group temperature with usage"));
         AppendMenuW(mm, MF_STRING | (g_tempAlerts ? MF_CHECKED : 0), ID_TEMP_ALERTS, T(L"Temperature alerts"));
+        {
+            HMENU tth = CreatePopupMenu();
+            UINT checked = 0;
+            const UINT count = ARRAYSIZE(TEMP_THRESHOLDS);
+            for (UINT i = 0; i < count; i++) {
+                std::wstring label = TF(L"{temperature} °C", { { L"temperature", std::to_wstring(TEMP_THRESHOLDS[i]) } });
+                AppendMenuW(tth, MF_STRING, ID_TEMP_THRESH_FIRST + i, label.c_str());
+                if (TEMP_THRESHOLDS[i] == g_tempAlertThreshold) checked = ID_TEMP_THRESH_FIRST + i;
+            }
+            if (checked) CheckMenuRadioItem(tth, ID_TEMP_THRESH_FIRST, ID_TEMP_THRESH_FIRST + count - 1, checked, MF_BYCOMMAND);
+            AppendMenuW(mm, MF_POPUP, (UINT_PTR)tth, T(L"Temperature alerts at"));
+        }
+        AppendMenuW(mm, MF_STRING | (g_usageAlerts ? MF_CHECKED : 0), ID_USAGE_ALERTS, T(L"Usage alerts"));
+        {
+            HMENU uth = CreatePopupMenu();
+            UINT checked = 0;
+            const UINT count = ARRAYSIZE(USAGE_THRESHOLDS);
+            for (UINT i = 0; i < count; i++) {
+                std::wstring label = std::to_wstring(USAGE_THRESHOLDS[i]) + L"%";
+                AppendMenuW(uth, MF_STRING, ID_USAGE_THRESH_FIRST + i, label.c_str());
+                if (USAGE_THRESHOLDS[i] == g_usageAlertThreshold) checked = ID_USAGE_THRESH_FIRST + i;
+            }
+            if (checked) CheckMenuRadioItem(uth, ID_USAGE_THRESH_FIRST, ID_USAGE_THRESH_FIRST + count - 1, checked, MF_BYCOMMAND);
+            AppendMenuW(mm, MF_POPUP, (UINT_PTR)uth, T(L"Usage alerts at"));
+        }
         HMENU lbl = CreatePopupMenu();
         AppendMenuW(lbl, MF_STRING, ID_LABEL_FIRST + 0, T(L"Icon"));
         AppendMenuW(lbl, MF_STRING, ID_LABEL_FIRST + 1, T(L"Word"));
@@ -1440,6 +1538,22 @@ void ShowMenu() {
         case ID_TEMP_ALERTS:
             g_tempAlerts = !g_tempAlerts;
             SaveTempAlerts(g_tempAlerts);
+            break;
+        case ID_USAGE_ALERTS:
+            g_usageAlerts = !g_usageAlerts;
+            SaveUsageAlerts(g_usageAlerts);
+            break;
+        case ID_USAGE_THRESH_FIRST:
+        case ID_USAGE_THRESH_FIRST + 1:
+        case ID_USAGE_THRESH_FIRST + 2:
+            g_usageAlertThreshold = USAGE_THRESHOLDS[cmd - ID_USAGE_THRESH_FIRST];
+            SaveUsageAlertThreshold(g_usageAlertThreshold);
+            break;
+        case ID_TEMP_THRESH_FIRST:
+        case ID_TEMP_THRESH_FIRST + 1:
+        case ID_TEMP_THRESH_FIRST + 2:
+            g_tempAlertThreshold = TEMP_THRESHOLDS[cmd - ID_TEMP_THRESH_FIRST];
+            SaveTempAlertThreshold(g_tempAlertThreshold);
             break;
         case ID_MODE_WIDGET: SetMode(true); break;
         case ID_MODE_TRAY: SetMode(false); break;
@@ -1585,6 +1699,7 @@ LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
                 g_hasMetricSnap = true;
                 delete s;
                 EvaluateTempAlerts(g_metricSnap);
+                EvaluateUsageAlerts(g_metricSnap);
                 if (changed) {
                     UpdateWidget();
                     ApplyAllMetricTray();
@@ -1845,6 +1960,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     g_brandColors = LoadBrandColors();
     g_groupTempsWithUsage = LoadGroupTempsWithUsage();
     g_tempAlerts = LoadTempAlerts();
+    g_tempAlertThreshold = LoadTempAlertThreshold();
+    g_usageAlerts = LoadUsageAlerts();
+    g_usageAlertThreshold = LoadUsageAlertThreshold();
     g_metricLabelStyle = LoadMetricLabelStyle();
     g_stacked = LoadStacked();
     g_pollIntervalMs = LoadPollSeconds() * 1000;

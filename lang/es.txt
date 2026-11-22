@@ -245,3 +245,9 @@ CPU temperature requires a one-time administrator prompt to install a background
 Temperature alerts = Alertas de temperatura
 High temperature = Temperatura alta
 {name}: {temp} = {name}: {temp}
+Usage alerts = Alertas de uso
+High usage = Uso alto
+Usage alerts at = Alertas de uso al
+Temperature alerts at = Alertas de temperatura a
+{name}: {value} = {name}: {value}
+{temperature} °C = {temperature} °C
