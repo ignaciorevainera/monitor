@@ -122,6 +122,16 @@ constexpr MetricSpec kMetrics[] = {
     { metrics::Id::Vram,     0xEEA0, L"VRAM",            L"V",    L"VRAM" },
     { metrics::Id::SsdTemp,  0xEDA2, L"SSD temperature", nullptr, L"SSD\u00B0" },
 };
+
+// The component an alert belongs to, so its balloon carries that part's icon (CPU, RAM...).
+wchar_t ComponentGlyph(int id) {
+    switch (static_cast<metrics::Id>(id)) {
+    case metrics::Id::CpuTemp: return 0xEEA1;
+    case metrics::Id::GpuTemp: return 0xE950;
+    case metrics::Id::SsdTemp: return 0xEDA2;
+    default: return kMetrics[id].glyph;
+    }
+}
 UINT g_taskbarCreatedMsg;
 bool g_lightTaskbar;
 bool g_wantWidget = true;      // user's choice: taskbar widget (default) or tray icons
@@ -152,7 +162,8 @@ std::map<std::wstring, bool> g_alertLatches;  // survive transient removal of a 
 bool g_alertIconAdded = false;  // short-lived tray icon for widget-mode notifications
 bool g_placeholder = false;
 HICON g_placeholderIcon = nullptr;
-HICON g_alertIcon = nullptr;  // custom large icon for notification balloons (NIIF_USER)
+struct AlertGlyphIcon { wchar_t glyph; HICON icon; };
+std::vector<AlertGlyphIcon> g_alertIcons;  // one 32 px icon per notification glyph
 
 // User-supplied names are presentation-only, keyed by stable DeviceStatus.key.
 // Driver identity, HID polling, brand detection and device diagnostics are unchanged.
@@ -600,10 +611,11 @@ HICON IconFor(int pct, bool charging, bool dim, Accent accent) {
 
 // ---- tray management --------------------------------------------------------------------------
 
-// Large notification icon: a Segoe Fluent glyph (the app has no finished .ico yet), drawn white
-// on transparent. NIIF_USER replaces the yellow warning triangle with this icon.
-HICON AlertIcon() {
-    if (g_alertIcon) return g_alertIcon;
+// Large notification icon: a Segoe Fluent glyph drawn white on transparent, cached per glyph.
+// NIIF_USER replaces the yellow warning triangle; each alert uses its component's glyph.
+HICON AlertIcon(wchar_t glyph) {
+    for (const auto& e : g_alertIcons)
+        if (e.glyph == glyph) return e.icon;
     const int S = GetSystemMetrics(SM_CXICON);
     HDC dc = CreateCompatibleDC(nullptr);
     BITMAPINFO bi{};
@@ -624,7 +636,6 @@ HICON AlertIcon() {
     HGDIOBJ oldF = SelectObject(dc, f);
     SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, RGB(255, 255, 255));
-    const wchar_t glyph = 0xE7F4;  // TVMonitor
     TextOutW(dc, 0, 0, &glyph, 1);
     GdiFlush();
     SelectObject(dc, oldF);
@@ -643,11 +654,12 @@ HICON AlertIcon() {
         DeleteDC(mdc);
     }
     ICONINFO ii{ TRUE, 0, 0, mask, bmp };
-    g_alertIcon = CreateIconIndirect(&ii);
+    HICON icon = CreateIconIndirect(&ii);
     DeleteObject(mask);
     DeleteObject(bmp);
     DeleteDC(dc);
-    return g_alertIcon;
+    if (icon) g_alertIcons.push_back({ glyph, icon });
+    return icon;
 }
 
 void CopyTip(wchar_t* dst, size_t cap, const std::wstring& s) {
@@ -671,7 +683,7 @@ std::wstring StatusText(const TrayEntry& e) {
 }
 
 void TrayCall(DWORD msg, UINT uid, HICON icon, const std::wstring& tip, const wchar_t* infoTitle = nullptr,
-              const std::wstring& info = L"") {
+              const std::wstring& info = L"", wchar_t balloonGlyph = 0, HICON balloonIcon = nullptr) {
     NOTIFYICONDATAW nid{ sizeof(nid) };
     nid.hWnd = g_hwnd;
     nid.uID = uid;
@@ -684,7 +696,7 @@ void TrayCall(DWORD msg, UINT uid, HICON icon, const std::wstring& tip, const wc
         CopyTip(nid.szInfoTitle, ARRAYSIZE(nid.szInfoTitle), infoTitle);
         CopyTip(nid.szInfo, ARRAYSIZE(nid.szInfo), info);
         nid.dwInfoFlags = NIIF_USER | NIIF_LARGE_ICON | NIIF_RESPECT_QUIET_TIME;
-        nid.hBalloonIcon = AlertIcon();
+        nid.hBalloonIcon = balloonIcon ? balloonIcon : AlertIcon(balloonGlyph);
     }
     Shell_NotifyIconW(msg, &nid);
     if (msg == NIM_ADD) {
@@ -705,27 +717,30 @@ void ShowBatteryAlert(TrayEntry& e) {
     const std::wstring message = TF(L"{name} is at {percent}%",
                                    { { L"name", DisplayName(e) }, { L"percent", std::to_wstring(e.st.percent) } });
     if (!g_useWidget && e.added) {
-        TrayCall(NIM_MODIFY, e.uid, e.icon, DisplayName(e) + L"\n" + StatusText(e), title.c_str(), message);
+        TrayCall(NIM_MODIFY, e.uid, e.icon, DisplayName(e) + L"\n" + StatusText(e), title.c_str(), message, 0, e.icon);
         return;
     }
     // Windows notification balloons need a tray icon. Keep a temporary one in widget mode
     // long enough for the shell to display the notification, then remove it.
-    if (!g_alertIcon && !AlertIcon()) g_placeholderIcon = g_placeholderIcon ? g_placeholderIcon : RenderIcon(L"-", -1, Foreground(), Foreground(), true);
-    TrayCall(g_alertIconAdded ? NIM_MODIFY : NIM_ADD, ALERT_ICON_ID, g_alertIcon ? g_alertIcon : g_placeholderIcon,
-             L"Monitor", title.c_str(), message);
+    HICON icon = e.icon ? e.icon : AlertIcon(0xE7F4);
+    if (!icon) g_placeholderIcon = g_placeholderIcon ? g_placeholderIcon : RenderIcon(L"-", -1, Foreground(), Foreground(), true);
+    TrayCall(g_alertIconAdded ? NIM_MODIFY : NIM_ADD, ALERT_ICON_ID, icon ? icon : g_placeholderIcon,
+             L"Monitor", title.c_str(), message, 0, icon);
     g_alertIconAdded = true;
     SetTimer(g_hwnd, TIMER_ALERT_ICON, 60 * 1000, nullptr);
 }
 
 void ShowMetricAlert(int id, const std::wstring& title, const std::wstring& formatted, const std::wstring& message) {
+    const wchar_t glyph = ComponentGlyph(id);
     if (g_metricTray[id].added && g_metricTray[id].icon) {
         TrayCall(NIM_MODIFY, metrics::kTrayUidBase + static_cast<UINT>(id), g_metricTray[id].icon,
-                 std::wstring(T(kMetrics[id].name)) + L": " + formatted, title.c_str(), message);
+                 std::wstring(T(kMetrics[id].name)) + L": " + formatted, title.c_str(), message, glyph);
         return;
     }
-    if (!g_alertIcon && !AlertIcon()) g_placeholderIcon = g_placeholderIcon ? g_placeholderIcon : RenderIcon(L"-", -1, Foreground(), Foreground(), true);
-    TrayCall(g_alertIconAdded ? NIM_MODIFY : NIM_ADD, ALERT_ICON_ID, g_alertIcon ? g_alertIcon : g_placeholderIcon,
-             L"Monitor", title.c_str(), message);
+    HICON icon = AlertIcon(glyph);
+    if (!icon) g_placeholderIcon = g_placeholderIcon ? g_placeholderIcon : RenderIcon(L"-", -1, Foreground(), Foreground(), true);
+    TrayCall(g_alertIconAdded ? NIM_MODIFY : NIM_ADD, ALERT_ICON_ID, icon ? icon : g_placeholderIcon,
+             L"Monitor", title.c_str(), message, glyph);
     g_alertIconAdded = true;
     SetTimer(g_hwnd, TIMER_ALERT_ICON, 60 * 1000, nullptr);
 }
@@ -1150,10 +1165,8 @@ void RedrawAll() {
         g_placeholderIcon = nullptr;
         if (g_placeholder) { TrayDelete(PLACEHOLDER_ID); g_placeholder = false; }
     }
-    if (g_alertIcon) {
-        DestroyIcon(g_alertIcon);
-        g_alertIcon = nullptr;
-    }
+    for (auto& a : g_alertIcons) DestroyIcon(a.icon);
+    g_alertIcons.clear();
     for (auto& [k, e] : g_entries) { e.iconSig.clear(); ApplyEntry(e); }
     for (const auto& m : kMetrics) {
         int id = static_cast<int>(m.id);
