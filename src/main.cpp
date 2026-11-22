@@ -164,6 +164,7 @@ bool g_placeholder = false;
 HICON g_placeholderIcon = nullptr;
 struct AlertGlyphIcon { wchar_t glyph; HICON icon; };
 std::vector<AlertGlyphIcon> g_alertIcons;  // one 32 px icon per notification glyph
+HICON g_appIcon = nullptr;  // small app icon: the notification header next to the title
 
 // User-supplied names are presentation-only, keyed by stable DeviceStatus.key.
 // Driver identity, HID polling, brand detection and device diagnostics are unchanged.
@@ -662,6 +663,16 @@ HICON AlertIcon(wchar_t glyph) {
     return icon;
 }
 
+// Small app icon for the notification header. The shell takes it from the tray icon that raises
+// the balloon, so alerts point at the exe's icon resource instead of the component glyph.
+HICON AppIcon() {
+    if (g_appIcon) return g_appIcon;
+    const int S = GetSystemMetrics(SM_CXSMICON);
+    g_appIcon = static_cast<HICON>(LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(1), IMAGE_ICON,
+                                              S, S, LR_DEFAULTCOLOR));
+    return g_appIcon;
+}
+
 void CopyTip(wchar_t* dst, size_t cap, const std::wstring& s) {
     wcsncpy(dst, s.c_str(), cap - 1);
     dst[cap - 1] = 0;
@@ -716,30 +727,21 @@ void ShowBatteryAlert(TrayEntry& e) {
     const std::wstring title = T(L"Low battery");
     const std::wstring message = TF(L"{name} is at {percent}%",
                                    { { L"name", DisplayName(e) }, { L"percent", std::to_wstring(e.st.percent) } });
-    if (!g_useWidget && e.added) {
-        TrayCall(NIM_MODIFY, e.uid, e.icon, DisplayName(e) + L"\n" + StatusText(e), title.c_str(), message, 0, e.icon);
-        return;
-    }
-    // Windows notification balloons need a tray icon. Keep a temporary one in widget mode
-    // long enough for the shell to display the notification, then remove it.
-    HICON icon = e.icon ? e.icon : AlertIcon(0xE7F4);
-    if (!icon) g_placeholderIcon = g_placeholderIcon ? g_placeholderIcon : RenderIcon(L"-", -1, Foreground(), Foreground(), true);
-    TrayCall(g_alertIconAdded ? NIM_MODIFY : NIM_ADD, ALERT_ICON_ID, icon ? icon : g_placeholderIcon,
-             L"Monitor", title.c_str(), message, 0, icon);
+    // Windows notification balloons need a tray icon, and the shell takes the header icon from
+    // it. Always use a temporary entry with the app icon; the component icon goes in the balloon.
+    HICON header = AppIcon();
+    if (!header) g_placeholderIcon = g_placeholderIcon ? g_placeholderIcon : RenderIcon(L"-", -1, Foreground(), Foreground(), true);
+    TrayCall(g_alertIconAdded ? NIM_MODIFY : NIM_ADD, ALERT_ICON_ID, header ? header : g_placeholderIcon,
+             L"Monitor", title.c_str(), message, 0, e.icon);
     g_alertIconAdded = true;
     SetTimer(g_hwnd, TIMER_ALERT_ICON, 60 * 1000, nullptr);
 }
 
 void ShowMetricAlert(int id, const std::wstring& title, const std::wstring& formatted, const std::wstring& message) {
     const wchar_t glyph = ComponentGlyph(id);
-    if (g_metricTray[id].added && g_metricTray[id].icon) {
-        TrayCall(NIM_MODIFY, metrics::kTrayUidBase + static_cast<UINT>(id), g_metricTray[id].icon,
-                 std::wstring(T(kMetrics[id].name)) + L": " + formatted, title.c_str(), message, glyph);
-        return;
-    }
-    HICON icon = AlertIcon(glyph);
-    if (!icon) g_placeholderIcon = g_placeholderIcon ? g_placeholderIcon : RenderIcon(L"-", -1, Foreground(), Foreground(), true);
-    TrayCall(g_alertIconAdded ? NIM_MODIFY : NIM_ADD, ALERT_ICON_ID, icon ? icon : g_placeholderIcon,
+    HICON header = AppIcon();
+    if (!header) g_placeholderIcon = g_placeholderIcon ? g_placeholderIcon : RenderIcon(L"-", -1, Foreground(), Foreground(), true);
+    TrayCall(g_alertIconAdded ? NIM_MODIFY : NIM_ADD, ALERT_ICON_ID, header ? header : g_placeholderIcon,
              L"Monitor", title.c_str(), message, glyph);
     g_alertIconAdded = true;
     SetTimer(g_hwnd, TIMER_ALERT_ICON, 60 * 1000, nullptr);
@@ -1155,10 +1157,14 @@ void ReAddAll() {
 void SetLanguage(const std::wstring& code);
 
 void RedrawAll() {
-    if (g_alertIconAdded) {  // alert icon shares the placeholder's HICON
+    if (g_alertIconAdded) {
         KillTimer(g_hwnd, TIMER_ALERT_ICON);
         TrayDelete(ALERT_ICON_ID);
         g_alertIconAdded = false;
+    }
+    if (g_appIcon) {
+        DestroyIcon(g_appIcon);
+        g_appIcon = nullptr;
     }
     if (g_placeholderIcon) {
         DestroyIcon(g_placeholderIcon);
