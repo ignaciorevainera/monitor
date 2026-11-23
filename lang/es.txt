@@ -251,3 +251,6 @@ Usage alerts at = Alertas de uso al
 Temperature alerts at = Alertas de temperatura a
 {name}: {value} = {name}: {value}
 {temperature} °C = {temperature} °C
+Devices = Dispositivos
+Appearance = Apariencia
+Alerts = Alertas

@@ -1386,75 +1386,103 @@ void ShowMenu() {
     HMENU m = CreatePopupMenu();
     std::vector<std::wstring> keys;  // device index -> device key; menu id ID_DEVICE_FIRST + index * DEV_STRIDE + command
     std::vector<TrayEntry*> all = OrderedEntries(false), shown = OrderedEntries(true);
-    if (all.empty()) AppendMenuW(m, MF_STRING | MF_GRAYED, 0, T(L"No devices with battery info found"));
-    else AppendMenuW(m, MF_STRING | MF_GRAYED, 0, T(L"Point at a device to show, hide or move it"));
-    for (TrayEntry* e : all) {
-        const std::wstring& k = e->st.key;
-        UINT base = ID_DEVICE_FIRST + (UINT)keys.size() * DEV_STRIDE;
-        auto pos = std::find(shown.begin(), shown.end(), e);
-        bool canLeft = pos != shown.end() && pos != shown.begin();
-        bool canRight = pos != shown.end() && pos + 1 != shown.end();
-        HMENU sub = CreatePopupMenu();
-        AppendMenuW(sub, MF_STRING | (IsHidden(k) ? 0 : MF_CHECKED), base + DEV_TOGGLE,
-                    g_wantWidget ? T(L"Show on the taskbar") : T(L"Show in the tray"));
-        AppendMenuW(sub, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(sub, MF_STRING | (canLeft ? 0 : MF_GRAYED), base + DEV_LEFT, g_wantWidget ? T(L"Move left") : T(L"Move up"));
-        AppendMenuW(sub, MF_STRING | (canRight ? 0 : MF_GRAYED), base + DEV_RIGHT, g_wantWidget ? T(L"Move right") : T(L"Move down"));
-        AppendMenuW(sub, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(sub, MF_STRING, base + DEV_RENAME, T(L"Rename device..."));
-        AppendMenuW(sub, MF_STRING | (g_aliases.count(k) ? 0 : MF_GRAYED),
-                    base + DEV_RESET_NAME, T(L"Reset to original name"));
-        HMENU alertMenu = CreatePopupMenu();
-        int selectedThreshold = alerts::OverrideFor(g_alertOverrides, k);
-        AppendMenuW(alertMenu, MF_STRING | (selectedThreshold == alerts::kUseDefault ? MF_CHECKED : 0),
-                    base + DEV_ALERT_DEFAULT, T(L"Use default (15%)"));
-        AppendMenuW(alertMenu, MF_STRING | (selectedThreshold == alerts::kDisabled ? MF_CHECKED : 0),
-                    base + DEV_ALERT_OFF, T(L"Disable notifications"));
-        AppendMenuW(alertMenu, MF_SEPARATOR, 0, nullptr);
-        for (int i = 0; i < alerts::kThresholdCount; ++i) {
-            int level = alerts::kThresholds[i];
-            std::wstring label = std::to_wstring(level) + L"%";
-            AppendMenuW(alertMenu, MF_STRING | (selectedThreshold == level ? MF_CHECKED : 0),
-                        base + DEV_ALERT_FIRST + i, label.c_str());
+    {
+        HMENU devMenu = CreatePopupMenu();
+        if (all.empty()) AppendMenuW(devMenu, MF_STRING | MF_GRAYED, 0, T(L"No devices with battery info found"));
+        else AppendMenuW(devMenu, MF_STRING | MF_GRAYED, 0, T(L"Point at a device to show, hide or move it"));
+        for (TrayEntry* e : all) {
+            const std::wstring& k = e->st.key;
+            UINT base = ID_DEVICE_FIRST + (UINT)keys.size() * DEV_STRIDE;
+            auto pos = std::find(shown.begin(), shown.end(), e);
+            bool canLeft = pos != shown.end() && pos != shown.begin();
+            bool canRight = pos != shown.end() && pos + 1 != shown.end();
+            HMENU sub = CreatePopupMenu();
+            AppendMenuW(sub, MF_STRING | (IsHidden(k) ? 0 : MF_CHECKED), base + DEV_TOGGLE,
+                        g_wantWidget ? T(L"Show on the taskbar") : T(L"Show in the tray"));
+            AppendMenuW(sub, MF_SEPARATOR, 0, nullptr);
+            AppendMenuW(sub, MF_STRING | (canLeft ? 0 : MF_GRAYED), base + DEV_LEFT, g_wantWidget ? T(L"Move left") : T(L"Move up"));
+            AppendMenuW(sub, MF_STRING | (canRight ? 0 : MF_GRAYED), base + DEV_RIGHT, g_wantWidget ? T(L"Move right") : T(L"Move down"));
+            AppendMenuW(sub, MF_SEPARATOR, 0, nullptr);
+            AppendMenuW(sub, MF_STRING, base + DEV_RENAME, T(L"Rename device..."));
+            AppendMenuW(sub, MF_STRING | (g_aliases.count(k) ? 0 : MF_GRAYED),
+                        base + DEV_RESET_NAME, T(L"Reset to original name"));
+            HMENU alertMenu = CreatePopupMenu();
+            int selectedThreshold = alerts::OverrideFor(g_alertOverrides, k);
+            AppendMenuW(alertMenu, MF_STRING | (selectedThreshold == alerts::kUseDefault ? MF_CHECKED : 0),
+                        base + DEV_ALERT_DEFAULT, T(L"Use default (15%)"));
+            AppendMenuW(alertMenu, MF_STRING | (selectedThreshold == alerts::kDisabled ? MF_CHECKED : 0),
+                        base + DEV_ALERT_OFF, T(L"Disable notifications"));
+            AppendMenuW(alertMenu, MF_SEPARATOR, 0, nullptr);
+            for (int i = 0; i < alerts::kThresholdCount; ++i) {
+                int level = alerts::kThresholds[i];
+                std::wstring label = std::to_wstring(level) + L"%";
+                AppendMenuW(alertMenu, MF_STRING | (selectedThreshold == level ? MF_CHECKED : 0),
+                            base + DEV_ALERT_FIRST + i, label.c_str());
+            }
+            AppendMenuW(sub, MF_POPUP, (UINT_PTR)alertMenu, T(L"Battery alerts"));
+            AppendMenuW(sub, MF_STRING, base + DEV_HISTORY, T(L"Battery history..."));
+            std::wstring line = DisplayName(*e) + L":  " + StatusText(*e) + L"   [" + T(e->st.via) + L"]";
+            AppendMenuW(devMenu, MF_POPUP | (IsHidden(k) ? 0 : MF_CHECKED), (UINT_PTR)sub, line.c_str());
+            keys.push_back(k);
         }
-        AppendMenuW(sub, MF_POPUP, (UINT_PTR)alertMenu, T(L"Battery alerts"));
-        AppendMenuW(sub, MF_STRING, base + DEV_HISTORY, T(L"Battery history..."));
-        std::wstring line = DisplayName(*e) + L":  " + StatusText(*e) + L"   [" + T(e->st.via) + L"]";
-        AppendMenuW(m, MF_POPUP | (IsHidden(k) ? 0 : MF_CHECKED), (UINT_PTR)sub, line.c_str());
-        keys.push_back(k);
+        AppendMenuW(devMenu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(devMenu, MF_STRING | (g_hideLastKnown ? MF_CHECKED : 0), ID_HIDE_LAST_KNOWN, T(L"Hide last known / asleep devices"));
+        AppendMenuW(devMenu, MF_STRING | (g_showDisconnectedDevices ? MF_CHECKED : 0), ID_SHOW_DISCONNECTED, T(L"Show disconnected devices"));
+        AppendMenuW(devMenu, MF_STRING | (g_recordHistory ? MF_CHECKED : 0), ID_RECORD_HISTORY, T(L"Record battery history"));
+        {
+            HMENU sub = CreatePopupMenu();
+            const UINT count = ARRAYSIZE(POLL_SECONDS);
+            UINT checked = 0;
+            for (UINT i = 0; i < count; i++) {
+                DWORD s = POLL_SECONDS[i];
+                std::wstring label = s < 60 ? TF(L"{seconds} s", { { L"seconds", std::to_wstring(s) } })
+                                            : TF(L"{minutes} min", { { L"minutes", std::to_wstring(s / 60) } });
+                AppendMenuW(sub, MF_STRING, ID_POLL_FIRST + i, label.c_str());
+                if (s * 1000 == g_pollIntervalMs) checked = ID_POLL_FIRST + i;
+            }
+            if (checked) CheckMenuRadioItem(sub, ID_POLL_FIRST, ID_POLL_FIRST + count - 1, checked, MF_BYCOMMAND);
+            AppendMenuW(devMenu, MF_POPUP, (UINT_PTR)sub, T(L"Check battery every"));
+        }
+        AppendMenuW(devMenu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(devMenu, MF_STRING, ID_REPORT, T(L"Request support for a device..."));
+        AppendMenuW(m, MF_POPUP, (UINT_PTR)devMenu, T(L"Devices"));
     }
-    AppendMenuW(m, MF_STRING | (g_hideLastKnown ? MF_CHECKED : 0), ID_HIDE_LAST_KNOWN, T(L"Hide last known / asleep devices"));
-    AppendMenuW(m, MF_STRING | (g_showDisconnectedDevices ? MF_CHECKED : 0), ID_SHOW_DISCONNECTED, T(L"Show disconnected devices"));
-    AppendMenuW(m, MF_STRING | (g_recordHistory ? MF_CHECKED : 0), ID_RECORD_HISTORY, T(L"Record battery history"));
-    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(m, MF_STRING | (g_wantWidget ? MF_CHECKED : 0), ID_MODE_WIDGET, T(L"Show on the taskbar (icon + percentage)"));
-    AppendMenuW(m, MF_STRING | (!g_wantWidget ? MF_CHECKED : 0), ID_MODE_TRAY, T(L"Show as tray icons"));
-    CheckMenuRadioItem(m, ID_MODE_WIDGET, ID_MODE_TRAY, g_wantWidget ? ID_MODE_WIDGET : ID_MODE_TRAY, MF_BYCOMMAND);
-    UINT bgFlags = MF_STRING | (g_widgetBackground ? MF_CHECKED : 0) | (g_wantWidget ? 0 : MF_GRAYED);
-    AppendMenuW(m, bgFlags, ID_WIDGET_BACKGROUND, T(L"Background behind taskbar text (for transparent taskbars)"));
-    AppendMenuW(m, MF_STRING | (g_stacked ? MF_CHECKED : 0) | (g_wantWidget ? 0 : MF_GRAYED), ID_STACKED, T(L"Icons above percentages (narrower)"));
     // With more than one monitor: choose which taskbars show the widget (all, main only, or one monitor).
     auto monitors = widget::OtherMonitors();
     if (monitors.size() > 31) monitors.resize(31);
-    if (!monitors.empty()) {
-        HMENU sub = CreatePopupMenu();
-        UINT f = MF_STRING | (g_wantWidget ? 0 : MF_GRAYED);
-        AppendMenuW(sub, f, ID_MONITOR_ALL, T(L"All monitors"));
-        AppendMenuW(sub, f, ID_MONITOR_MAIN, T(L"Main monitor only"));
-        UINT checked = g_widgetMonitor == L"main" ? ID_MONITOR_MAIN : ID_MONITOR_ALL;
-        bool found = g_widgetMonitor == L"all" || g_widgetMonitor == L"main";
-        for (UINT i = 0; i < monitors.size(); i++) {
-            AppendMenuW(sub, f, ID_MONITOR_FIRST + i, TF(L"{monitor} only", { { L"monitor", monitors[i].label } }).c_str());
-            if (monitors[i].id == g_widgetMonitor) { checked = ID_MONITOR_FIRST + i; found = true; }
+    {
+        HMENU appMenu = CreatePopupMenu();
+        AppendMenuW(appMenu, MF_STRING | (g_wantWidget ? MF_CHECKED : 0), ID_MODE_WIDGET, T(L"Show on the taskbar (icon + percentage)"));
+        AppendMenuW(appMenu, MF_STRING | (!g_wantWidget ? MF_CHECKED : 0), ID_MODE_TRAY, T(L"Show as tray icons"));
+        CheckMenuRadioItem(appMenu, ID_MODE_WIDGET, ID_MODE_TRAY, g_wantWidget ? ID_MODE_WIDGET : ID_MODE_TRAY, MF_BYCOMMAND);
+        UINT bgFlags = MF_STRING | (g_widgetBackground ? MF_CHECKED : 0) | (g_wantWidget ? 0 : MF_GRAYED);
+        AppendMenuW(appMenu, bgFlags, ID_WIDGET_BACKGROUND, T(L"Background behind taskbar text (for transparent taskbars)"));
+        AppendMenuW(appMenu, MF_STRING | (g_stacked ? MF_CHECKED : 0) | (g_wantWidget ? 0 : MF_GRAYED), ID_STACKED, T(L"Icons above percentages (narrower)"));
+        if (!monitors.empty()) {
+            HMENU sub = CreatePopupMenu();
+            UINT f = MF_STRING | (g_wantWidget ? 0 : MF_GRAYED);
+            AppendMenuW(sub, f, ID_MONITOR_ALL, T(L"All monitors"));
+            AppendMenuW(sub, f, ID_MONITOR_MAIN, T(L"Main monitor only"));
+            UINT checked = g_widgetMonitor == L"main" ? ID_MONITOR_MAIN : ID_MONITOR_ALL;
+            bool found = g_widgetMonitor == L"all" || g_widgetMonitor == L"main";
+            for (UINT i = 0; i < monitors.size(); i++) {
+                AppendMenuW(sub, f, ID_MONITOR_FIRST + i, TF(L"{monitor} only", { { L"monitor", monitors[i].label } }).c_str());
+                if (monitors[i].id == g_widgetMonitor) { checked = ID_MONITOR_FIRST + i; found = true; }
+            }
+            if (!found) {  // the chosen monitor is unplugged: the main taskbar shows the widget meanwhile
+                AppendMenuW(sub, MF_STRING | MF_GRAYED, ID_MONITOR_FIRST + 31, T(L"Chosen monitor (not connected, shown on main)"));
+                checked = ID_MONITOR_FIRST + 31;
+            }
+            CheckMenuRadioItem(sub, ID_MONITOR_ALL, ID_MONITOR_FIRST + 31, checked, MF_BYCOMMAND);
+            AppendMenuW(appMenu, MF_POPUP | (g_wantWidget ? 0 : MF_GRAYED), (UINT_PTR)sub, T(L"Show the widget on"));
         }
-        if (!found) {  // the chosen monitor is unplugged: the main taskbar shows the widget meanwhile
-            AppendMenuW(sub, MF_STRING | MF_GRAYED, ID_MONITOR_FIRST + 31, T(L"Chosen monitor (not connected, shown on main)"));
-            checked = ID_MONITOR_FIRST + 31;
-        }
-        CheckMenuRadioItem(sub, ID_MONITOR_ALL, ID_MONITOR_FIRST + 31, checked, MF_BYCOMMAND);
-        AppendMenuW(m, MF_POPUP | (g_wantWidget ? 0 : MF_GRAYED), (UINT_PTR)sub, T(L"Show the widget on"));
+        AppendMenuW(appMenu, MF_STRING | (g_brandColors ? MF_CHECKED : 0), ID_BRAND_COLORS, T(L"Brand colors (Razer green, Logitech blue, ...)"));
+        AppendMenuW(appMenu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(appMenu, MF_STRING | (g_wantWidget ? 0 : MF_GRAYED), ID_OFFSET_LEFT, T(L"Move left"));
+        AppendMenuW(appMenu, MF_STRING | (g_wantWidget ? 0 : MF_GRAYED), ID_OFFSET_RIGHT, T(L"Move right"));
+        AppendMenuW(appMenu, MF_STRING | (g_wantWidget ? 0 : MF_GRAYED), ID_OFFSET_RESET, T(L"Reset position"));
+        AppendMenuW(m, MF_POPUP, (UINT_PTR)appMenu, T(L"Appearance"));
     }
-    AppendMenuW(m, MF_STRING | (g_brandColors ? MF_CHECKED : 0), ID_BRAND_COLORS, T(L"Brand colors (Razer green, Logitech blue, ...)"));
     {
         HMENU mm = CreatePopupMenu();
         for (const auto& ms : kMetrics) {
@@ -1480,32 +1508,6 @@ void ShowMenu() {
         if (checkedRate) CheckMenuRadioItem(rate, ID_METRIC_INTERVAL_FIRST, ID_METRIC_INTERVAL_FIRST + rateCount - 1, checkedRate, MF_BYCOMMAND);
         AppendMenuW(mm, MF_POPUP, (UINT_PTR)rate, T(L"Refresh rate"));
         AppendMenuW(mm, MF_STRING | (g_groupTempsWithUsage ? MF_CHECKED : 0), ID_METRIC_GROUP, T(L"Group temperature with usage"));
-        AppendMenuW(mm, MF_STRING | (g_tempAlerts ? MF_CHECKED : 0), ID_TEMP_ALERTS, T(L"Temperature alerts"));
-        {
-            HMENU tth = CreatePopupMenu();
-            UINT checked = 0;
-            const UINT count = ARRAYSIZE(TEMP_THRESHOLDS);
-            for (UINT i = 0; i < count; i++) {
-                std::wstring label = TF(L"{temperature} °C", { { L"temperature", std::to_wstring(TEMP_THRESHOLDS[i]) } });
-                AppendMenuW(tth, MF_STRING, ID_TEMP_THRESH_FIRST + i, label.c_str());
-                if (TEMP_THRESHOLDS[i] == g_tempAlertThreshold) checked = ID_TEMP_THRESH_FIRST + i;
-            }
-            if (checked) CheckMenuRadioItem(tth, ID_TEMP_THRESH_FIRST, ID_TEMP_THRESH_FIRST + count - 1, checked, MF_BYCOMMAND);
-            AppendMenuW(mm, MF_POPUP, (UINT_PTR)tth, T(L"Temperature alerts at"));
-        }
-        AppendMenuW(mm, MF_STRING | (g_usageAlerts ? MF_CHECKED : 0), ID_USAGE_ALERTS, T(L"Usage alerts"));
-        {
-            HMENU uth = CreatePopupMenu();
-            UINT checked = 0;
-            const UINT count = ARRAYSIZE(USAGE_THRESHOLDS);
-            for (UINT i = 0; i < count; i++) {
-                std::wstring label = std::to_wstring(USAGE_THRESHOLDS[i]) + L"%";
-                AppendMenuW(uth, MF_STRING, ID_USAGE_THRESH_FIRST + i, label.c_str());
-                if (USAGE_THRESHOLDS[i] == g_usageAlertThreshold) checked = ID_USAGE_THRESH_FIRST + i;
-            }
-            if (checked) CheckMenuRadioItem(uth, ID_USAGE_THRESH_FIRST, ID_USAGE_THRESH_FIRST + count - 1, checked, MF_BYCOMMAND);
-            AppendMenuW(mm, MF_POPUP, (UINT_PTR)uth, T(L"Usage alerts at"));
-        }
         HMENU lbl = CreatePopupMenu();
         AppendMenuW(lbl, MF_STRING, ID_LABEL_FIRST + 0, T(L"Icon"));
         AppendMenuW(lbl, MF_STRING, ID_LABEL_FIRST + 1, T(L"Word"));
@@ -1526,10 +1528,36 @@ void ShowMenu() {
         }
         AppendMenuW(m, MF_POPUP, (UINT_PTR)mm, T(L"System metrics"));
     }
-    AppendMenuW(m, MF_STRING | (g_wantWidget ? 0 : MF_GRAYED), ID_OFFSET_LEFT, T(L"Move left"));
-    AppendMenuW(m, MF_STRING | (g_wantWidget ? 0 : MF_GRAYED), ID_OFFSET_RIGHT, T(L"Move right"));
-    AppendMenuW(m, MF_STRING | (g_wantWidget ? 0 : MF_GRAYED), ID_OFFSET_RESET, T(L"Reset position"));
-    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    {
+        HMENU alertsMenu = CreatePopupMenu();
+        AppendMenuW(alertsMenu, MF_STRING | (g_tempAlerts ? MF_CHECKED : 0), ID_TEMP_ALERTS, T(L"Temperature alerts"));
+        {
+            HMENU tth = CreatePopupMenu();
+            UINT checked = 0;
+            const UINT count = ARRAYSIZE(TEMP_THRESHOLDS);
+            for (UINT i = 0; i < count; i++) {
+                std::wstring label = TF(L"{temperature} °C", { { L"temperature", std::to_wstring(TEMP_THRESHOLDS[i]) } });
+                AppendMenuW(tth, MF_STRING, ID_TEMP_THRESH_FIRST + i, label.c_str());
+                if (TEMP_THRESHOLDS[i] == g_tempAlertThreshold) checked = ID_TEMP_THRESH_FIRST + i;
+            }
+            if (checked) CheckMenuRadioItem(tth, ID_TEMP_THRESH_FIRST, ID_TEMP_THRESH_FIRST + count - 1, checked, MF_BYCOMMAND);
+            AppendMenuW(alertsMenu, MF_POPUP, (UINT_PTR)tth, T(L"Temperature alerts at"));
+        }
+        AppendMenuW(alertsMenu, MF_STRING | (g_usageAlerts ? MF_CHECKED : 0), ID_USAGE_ALERTS, T(L"Usage alerts"));
+        {
+            HMENU uth = CreatePopupMenu();
+            UINT checked = 0;
+            const UINT count = ARRAYSIZE(USAGE_THRESHOLDS);
+            for (UINT i = 0; i < count; i++) {
+                std::wstring label = std::to_wstring(USAGE_THRESHOLDS[i]) + L"%";
+                AppendMenuW(uth, MF_STRING, ID_USAGE_THRESH_FIRST + i, label.c_str());
+                if (USAGE_THRESHOLDS[i] == g_usageAlertThreshold) checked = ID_USAGE_THRESH_FIRST + i;
+            }
+            if (checked) CheckMenuRadioItem(uth, ID_USAGE_THRESH_FIRST, ID_USAGE_THRESH_FIRST + count - 1, checked, MF_BYCOMMAND);
+            AppendMenuW(alertsMenu, MF_POPUP, (UINT_PTR)uth, T(L"Usage alerts at"));
+        }
+        AppendMenuW(m, MF_POPUP, (UINT_PTR)alertsMenu, T(L"Alerts"));
+    }
     // Language: automatic, every built-in or user-added language (in its own name), and a way to add one.
     i18n::Init();  // picks up language files added since the last time
     auto languages = i18n::Available();
@@ -1548,30 +1576,9 @@ void ShowMenu() {
         AppendMenuW(sub, MF_STRING, ID_LANG_ADD, T(L"Add your own language..."));
         AppendMenuW(m, MF_POPUP, (UINT_PTR)sub, T(L"Language"));
     }
-    {
-        HMENU sub = CreatePopupMenu();
-        const UINT count = ARRAYSIZE(POLL_SECONDS);
-        UINT checked = 0;
-        for (UINT i = 0; i < count; i++) {
-            DWORD s = POLL_SECONDS[i];
-            std::wstring label = s < 60 ? TF(L"{seconds} s", { { L"seconds", std::to_wstring(s) } })
-                                        : TF(L"{minutes} min", { { L"minutes", std::to_wstring(s / 60) } });
-            AppendMenuW(sub, MF_STRING, ID_POLL_FIRST + i, label.c_str());
-            if (s * 1000 == g_pollIntervalMs) checked = ID_POLL_FIRST + i;
-        }
-        if (checked) CheckMenuRadioItem(sub, ID_POLL_FIRST, ID_POLL_FIRST + count - 1, checked, MF_BYCOMMAND);
-        AppendMenuW(m, MF_POPUP, (UINT_PTR)sub, T(L"Check battery every"));
-    }
     AppendMenuW(m, MF_STRING, ID_REFRESH, T(L"Refresh now"));
     AppendMenuW(m, MF_STRING, ID_TASKMGR, T(L"Open Task Manager"));
     AppendMenuW(m, MF_STRING | (AutostartEnabled() ? MF_CHECKED : 0), ID_AUTOSTART, T(L"Start with Windows"));
-    AppendMenuW(m, MF_STRING, ID_REPORT, T(L"Request support for a device..."));
-    AppendMenuW(m, MF_STRING, ID_SUPPORT, T(L"Support the project..."));
-    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(m, MF_STRING | (updates::Busy() ? MF_GRAYED : 0), ID_UPDATE, updates::MenuLabel().c_str());
-    UINT updateFlags = MF_STRING | (updates::AutomaticEnabled() ? MF_CHECKED : 0) |
-                       (updates::Supported() ? 0 : MF_GRAYED);
-    AppendMenuW(m, updateFlags, ID_AUTO_UPDATE, T(L"Automatically check for updates"));
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING, ID_EXIT, T(L"Exit"));
     POINT pt;
@@ -1636,10 +1643,7 @@ void ShowMenu() {
             break;
         case ID_MODE_WIDGET: SetMode(true); break;
         case ID_MODE_TRAY: SetMode(false); break;
-        case ID_SUPPORT: ShellExecuteW(nullptr, L"open", L"https://github.com/sponsors/krisgfx9", nullptr, nullptr, SW_SHOWNORMAL); break;
         case ID_REPORT: report::Show(g_inst, g_hwnd); break;
-        case ID_UPDATE: updates::Activate(g_hwnd); break;
-        case ID_AUTO_UPDATE: updates::ToggleAutomatic(); break;
         case ID_EXIT: DestroyWindow(g_hwnd); break;
         default:
             if (cmd >= ID_POLL_FIRST && cmd < ID_POLL_FIRST + ARRAYSIZE(POLL_SECONDS)) {
