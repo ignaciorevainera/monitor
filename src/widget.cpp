@@ -1243,6 +1243,15 @@ LRESULT CALLBACK WidgetProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
     return DefWindowProcW(h, msg, wp, lp);
 }
 
+// The taskbar is topmost too, so a tooltip shown while the bar is active ends up behind it and
+// loses its last lines. Re-raise the tip whenever the control makes it visible.
+WNDPROC g_tipOrig = nullptr;
+LRESULT CALLBACK TipProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+    if (msg == WM_SHOWWINDOW && wp)
+        SetWindowPos(h, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    return CallWindowProcW(g_tipOrig, h, msg, wp, lp);
+}
+
 }  // namespace
 
 namespace widget {
@@ -1282,6 +1291,7 @@ bool Create(HINSTANCE inst, HWND notifyWnd, UINT clickMsg, bool lightTheme) {
     g_tip = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr, WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX, 0, 0, 0, 0,
                             notifyWnd, nullptr, inst, nullptr);
     if (g_tip) {
+        g_tipOrig = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(g_tip, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(TipProc)));
         ApplyTipTheme();
         TTTOOLINFOW ti{ sizeof(ti) };
         ti.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
