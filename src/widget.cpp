@@ -341,7 +341,6 @@ wchar_t Glyph(DeviceKind k, bool bluetooth, wchar_t glyphOverride = 0) {
 }
 constexpr wchar_t kBolt = 0xE945;            // LightningBolt
 constexpr wchar_t kCheck = 0xE73E;           // CheckMark, in place of the bolt once fully charged
-constexpr wchar_t kMore = 0xE712;            // More ("...") when items are hidden due to overflow
 constexpr wchar_t kBatteryUnknown = 0xE996;  // shown when there is nothing to display
 
 // Creates a font, falling back when the preferred face is not installed (GDI would silently substitute).
@@ -483,9 +482,10 @@ struct Piece {
 //    used only when the taskbar is tall enough, otherwise the normal row
 //  * vertical (left / right taskbar, from PR #321): one device per row block, stacked top to bottom
 // `width` and `height` return the strip's size; in the vertical layout the width is the bar's.
-std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool compact = false,
-                          const std::vector<uint8_t>* skip = nullptr, bool showMore = false,
-                          std::vector<int>* itemWidths = nullptr, int* moreWidth = nullptr) {
+std::vector<Piece> Layout(int barW, int barH, int& width, int& height,
+                          metrics::Phase phase = metrics::Phase::S0_Full,
+                          const std::vector<uint8_t>* skip = nullptr,
+                          std::vector<int>* itemWidths = nullptr) {
     Rgb fg = g_light ? Rgb{ 0, 0, 0 } : Rgb{ 255, 255, 255 };
     Rgb red = g_light ? Rgb{ 196, 30, 40 } : Rgb{ 255, 90, 90 };
     auto sc1 = widget::SeverityColor(1, g_light);
@@ -499,20 +499,10 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
     HFONT text = MakeFont(Px(13), FW_NORMAL, L"Segoe UI Variable Text", L"Segoe UI", Px(12));
     HFONT caption = MakeFont(std::max(8, Px(7)), FW_SEMIBOLD, L"Segoe UI Variable Text", L"Segoe UI");  // never under 8 px
 
-    int itemGap = compact ? Px(6) : Px(14);
+    int itemGap = phase >= metrics::Phase::S2_Compact ? Px(6) : Px(14);
     std::vector<Piece> out;
     struct Slot { int icon, word, label, bolt, inlineTemp, itemIdx; };  // indices of one device's pieces (-1 for absent)
     std::vector<Slot> slots;
-    if (showMore) {
-        size_t mg = out.size();
-        slots.push_back({ (int)mg, -1, -1, -1, -1, -1 });
-        Piece more{ RenderMask(std::wstring(1, kMore), icons, g_light), fg, 220, itemGap };
-        if (moreWidth) *moreWidth = more.m.w + itemGap;
-        out.push_back(std::move(more));
-    } else if (moreWidth) {
-        Mask mm = RenderMask(std::wstring(1, kMore), icons, g_light);
-        *moreWidth = mm.w + itemGap;
-    }
     if (itemWidths) itemWidths->assign(g_items.size(), 0);
     if (g_items.empty()) out.push_back({ RenderMask(std::wstring(1, kBatteryUnknown), icons, g_light), fg, 110, 0 });
     size_t lastVisible = g_items.size();
@@ -526,8 +516,15 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
         Rgb tc = it.severity >= 2 ? critColor : it.severity == 1 ? warnColor : it.low ? red : fg;
         bool mark = it.charging || it.full;  // bolt while charging, green check mark once full
         bool hasInline = !it.inlineTempText.empty();
-        bool showWord = !compact && !it.word.empty() && it.labelStyle != 0;
-        bool showGlyph = (it.labelStyle != 1) || compact;
+        bool showWord = (phase == metrics::Phase::S0_Full) && !it.word.empty() && it.labelStyle != 0;
+        bool showGlyph = false;
+        switch (phase) {
+            case metrics::Phase::S0_Full:          showGlyph = (it.labelStyle != 1); break;
+            case metrics::Phase::S1_NoWords:
+            case metrics::Phase::S2_Compact:       showGlyph = true; break;
+            case metrics::Phase::S3_NoMetricGlyph: showGlyph = (it.metric < 0); break;
+            default:                               showGlyph = false; break;
+        }
         bool branded = it.accent != Accent::None;
         BrandColor bc = AccentColor(it.accent, g_light);
         Rgb accent{ bc.r, bc.g, bc.b };
@@ -578,8 +575,8 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
         slots.push_back({ glyphIdx, wordIdx, labelIdx, boltIdx, inlineIdx, (int)i });
         int gap = i < lastVisible ? itemGap : 0;
         out.back().gapAfter = gap;
-        if (itemWidths) (*itemWidths)[i] = iw + itemGap;
-        if (showGlyph && !compact && !it.label.empty()) {  // tiny caption in the bottom-right corner of the icon
+        if (itemWidths) (*itemWidths)[i] = iw;
+        if (showGlyph && phase <= metrics::Phase::S1_NoWords && !it.label.empty()) {  // tiny caption in the bottom-right corner of the icon
             Piece c{ RenderMask(it.label, caption, g_light), fg, a, 0 };
             c.anchor = glyphIdx;
             c.bx = out[glyphIdx].m.w - c.m.w + Px(3);
@@ -663,10 +660,10 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
             int wordW = s.word >= 0 ? out[s.word].m.w + Px(4) : 0;
             int boltW = s.bolt >= 0 ? Px(2) + out[s.bolt].m.w : 0;
             int inlineW = s.inlineTemp >= 0 ? Px(4) + out[s.inlineTemp].m.w : 0;
-            int textW = wordW + lb.m.w + inlineW;
+            int textW = wordW + lb.m.w + inlineW + (s.icon >= 0 ? 0 : boltW);
             int iconW = s.icon >= 0 ? out[s.icon].m.w + boltW : 0;
             int slotW = std::max(iconW, textW);
-            if (itemWidths && s.itemIdx >= 0) (*itemWidths)[s.itemIdx] = slotW + itemGap;
+            if (itemWidths && s.itemIdx >= 0) (*itemWidths)[s.itemIdx] = slotW;
             if (s.icon >= 0) {
                 Piece& ic = out[s.icon];
                 ic.px = x + (slotW - ic.m.w - boltW) / 2;
@@ -690,6 +687,12 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height, bool comp
                 out[s.inlineTemp].px = lb.px + lb.m.w + Px(4);
                 out[s.inlineTemp].py = ty + (rowH - out[s.inlineTemp].m.h) / 2;
             }
+            if (s.bolt >= 0 && s.icon < 0) {  // value-only rows: the bolt rides after the text
+                int ex = lb.px + lb.m.w;
+                if (s.inlineTemp >= 0) ex += Px(4) + out[s.inlineTemp].m.w;
+                out[s.bolt].px = ex + Px(2);
+                out[s.bolt].py = ty + (rowH - out[s.bolt].m.h) / 2;
+            }
             x += slotW + itemGap;
         }
         width = x - itemGap + Px(8);
@@ -712,6 +715,8 @@ struct LayoutCache {
     std::vector<WidgetItem> items;
     std::vector<Piece> pieces;
     int w = 0, h = 0;
+    int padLeft = 0;
+    bool rtl = false;
     std::wstring hiddenTip;
 };
 
@@ -753,43 +758,58 @@ void PaintStrip(HWND wnd, HWND taskbar, SIZE& size, int maxW, float hoverT) {
     GetClientRect(taskbar, &bar);
     int barW = bar.right - bar.left, barH = bar.bottom - bar.top;
     int dpi = Dpi();
+    bool rtl = (GetWindowLongW(taskbar, GWL_EXSTYLE) & WS_EX_LAYOUTRTL) != 0;
     LayoutCache& cache = CacheFor(wnd);
     bool cacheHit = cache.valid && cache.light == g_light && cache.dpi == dpi &&
-                    cache.stacked == g_stacked && cache.vertical == g_vertical &&
+                    cache.stacked == g_stacked && cache.vertical == g_vertical && cache.rtl == rtl &&
                     cache.barW == barW && cache.barH == barH && cache.maxW == maxW &&
                     SameItems(cache.items, g_items);
     if (!cacheHit) {
         int W = 0, H = 0;
-        auto pieces = Layout(barW, barH, W, H);
+        int padLeft = 0;
+        std::vector<int> wFull, wGlyph, wValue;
+        metrics::Phase phase = metrics::Phase::S0_Full;
+        auto pieces = Layout(barW, barH, W, H, phase, nullptr, &wFull);
         std::wstring hiddenTip;
-        if (maxW < INT_MAX && W > maxW && !g_items.empty()) {
-            std::vector<int> itemWidths;
-            int moreW = 0;
-            pieces = Layout(barW, barH, W, H, true, nullptr, false, &itemWidths, &moreW);
-            if (!g_vertical && W > maxW) {
-                std::vector<uint8_t> isMetric(g_items.size(), 0);
-                int lowIdx = -1;
-                for (size_t i = 0; i < g_items.size(); i++) {
-                    isMetric[i] = g_items[i].metric >= 0 ? 1 : 0;
-                    if (g_items[i].metric < 0 && g_items[i].low && lowIdx < 0) lowIdx = static_cast<int>(i);
-                }
-                int avail = std::max(0, maxW - moreW - Px(16));
-                auto hidden = metrics::PickHidden(itemWidths, avail, isMetric, lowIdx);
-                if (!hidden.empty()) {
-                    std::vector<uint8_t> skip(g_items.size(), 0);
-                    std::wstring names;
-                    for (int idx : hidden) {
-                        if (idx >= 0 && idx < static_cast<int>(g_items.size())) {
-                            skip[idx] = 1;
-                            if (!g_items[idx].name.empty()) {
-                                if (!names.empty()) names += L", ";
-                                names += g_items[idx].name;
-                            }
+        if (maxW < INT_MAX && !g_vertical && W > maxW && !g_items.empty()) {
+            int dummyW = 0, dummyH = 0;
+            Layout(barW, barH, dummyW, dummyH, metrics::Phase::S1_NoWords, nullptr, &wGlyph);
+            Layout(barW, barH, dummyW, dummyH, metrics::Phase::S4_ValueOnly, nullptr, &wValue);
+            std::vector<metrics::OverflowItem> ovItems(g_items.size());
+            for (size_t i = 0; i < g_items.size(); i++) {
+                ovItems[i].wFull = wFull[i];
+                ovItems[i].wGlyph = wGlyph[i];
+                ovItems[i].wValue = wValue[i];
+                ovItems[i].isMetric = g_items[i].metric >= 0;
+                ovItems[i].low = g_items[i].low;
+                ovItems[i].alertSeverity = std::max(g_items[i].severity, g_items[i].inlineTempSeverity);
+            }
+            auto ov = metrics::SelectOverflowPhase(ovItems, maxW, Px(8) * 2, Px(14), Px(6));
+            phase = ov.phase;
+            std::vector<uint8_t> skip(g_items.size(), 0);
+            if (!ov.hidden.empty()) {
+                std::wstring names;
+                for (int idx : ov.hidden) {
+                    if (idx >= 0 && idx < static_cast<int>(g_items.size())) {
+                        skip[idx] = 1;
+                        if (!g_items[idx].name.empty()) {
+                            if (!names.empty()) names += L", ";
+                            names += g_items[idx].name;
                         }
                     }
-                    if (wnd == g_wnd && !names.empty()) hiddenTip = T(L"Hidden") + std::wstring(L": ") + names;
-                    pieces = Layout(barW, barH, W, H, true, &skip, true);
                 }
+                if (wnd == g_wnd && !names.empty()) hiddenTip = T(L"Hidden") + std::wstring(L": ") + names;
+            }
+            if (phase != metrics::Phase::S0_Full) {
+                pieces = Layout(barW, barH, W, H, phase, ov.hidden.empty() ? nullptr : &skip);
+            }
+        }
+        if (wnd == g_wnd && !g_vertical && !rtl && maxW < INT_MAX && phase >= metrics::Phase::S4_ValueOnly) {
+            int pitch = GetSystemMetricsForDpi(SM_CXSMICON, dpi);
+            int alignedW = pitch > 0 ? ((W + pitch - 1) / pitch) * pitch : W;
+            if (alignedW > W && alignedW <= maxW) {  // snap to the taskbar grid only while it still fits
+                padLeft = alignedW - W;
+                W = alignedW;
             }
         }
         cache.valid = true;
@@ -797,6 +817,7 @@ void PaintStrip(HWND wnd, HWND taskbar, SIZE& size, int maxW, float hoverT) {
         cache.dpi = dpi;
         cache.stacked = g_stacked;
         cache.vertical = g_vertical;
+        cache.rtl = rtl;
         cache.barW = barW;
         cache.barH = barH;
         cache.maxW = maxW;
@@ -804,6 +825,7 @@ void PaintStrip(HWND wnd, HWND taskbar, SIZE& size, int maxW, float hoverT) {
         cache.pieces = std::move(pieces);
         cache.w = W;
         cache.h = H;
+        cache.padLeft = padLeft;
         cache.hiddenTip = std::move(hiddenTip);
     }
     const auto& pieces = cache.pieces;
@@ -842,14 +864,14 @@ void PaintStrip(HWND wnd, HWND taskbar, SIZE& size, int maxW, float hoverT) {
         if (a > 0) roundRect(Px(4), Px(4), g_light ? Rgb{ 0, 0, 0 } : Rgb{ 255, 255, 255 }, a);
     }
 
-    int x = Px(8);
+    int x = Px(8) + cache.padLeft;
     Rgb track = g_light ? Rgb{ 0, 0, 0 } : Rgb{ 255, 255, 255 };
     std::vector<int> xs(pieces.size()), ys(pieces.size());
     for (size_t i = 0; i < pieces.size(); i++) {
         const Piece& p = pieces[i];
         if (p.anchor < 0) {
             bool fixed = p.px != INT_MIN;  // stacked / vertical layout: Layout() placed it
-            xs[i] = fixed ? p.px : x;
+            xs[i] = fixed ? p.px + cache.padLeft : x;
             ys[i] = fixed ? p.py : (H - p.m.h) / 2;
             if (p.haloR) cv.Draw(p.halo, xs[i] - p.haloR, ys[i] - p.haloR, p.color, p.haloAlpha * p.alpha / 255);
             if (p.barPct >= 0) {
