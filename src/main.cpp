@@ -1577,11 +1577,15 @@ void ShowMenu() {
     POINT pt;
     GetCursorPos(&pt);
     SetForegroundWindow(g_hwnd);
+    // The taskbar is always-on-top; without a topmost owner the rows that reach into it are
+    // painted behind the bar, so the menu looks cut off at the bottom.
+    SetWindowPos(g_hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     widget::SuspendHover();
     widget::SetTooltipActive(false);
     UINT cmd = TrackPopupMenu(
         m, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | (i18n::Rtl() ? TPM_LAYOUTRTL : 0), pt.x,
         pt.y, 0, g_hwnd, nullptr);
+    SetWindowPos(g_hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     widget::SetTooltipActive(true);
     PostMessageW(g_hwnd, WM_NULL, 0, 0);
     DestroyMenu(m);
