@@ -125,6 +125,16 @@ Estado: 19-11-2026. Spec: `docs/monitor-spec.md` (decisiones D1–D15).
 - **Verificación de release**: descargar el asset publicado, comparar SHA-256 contra `SHA256SUMS.txt`, instalarlo y checar ARP + dump. No confiar solo en el artifact del CI.
 - Ícono de la app generado sin dependencias (`scripts/make-app-icon.ps1`): DIB clásico por tamaño (el constructor .NET de Icon no lee entradas PNG), placa redondeada para que lea en claro/oscuro.
 
+## Deltas aprendidos en la 1.1.0 (degradación del widget y menús)
+
+- **Escalera de overflow S0–S6** en el widget: completo → sin palabras (gap normal) → compacto → sin glifos de métricas → solo valores → ocultar widgets (métricas primero, batería baja protegida) → un solo valor (low > severidad > primero). El icono "…" se eliminó; el tooltip `Hidden: …` queda como única pista.
+- **La selección de fase es pura** (`metrics::SelectOverflowPhase` en `overflow.h`) y mide con la misma fórmula que dibuja `Layout` (`Px(8)*2` + `(n-1)*gap` + anchos sin gap). Un mismatch ahí es el bug típico de estas cascadas.
+- **Modo stacked sin glifos**: el bolt/check sólo se posicionaba cuando había icono; en S4+ quedaba encima del primer ítem y fuera del ancho. Ahora va tras el texto.
+- **Alineación a la cuadrícula**: redondear el ancho a múltiplos del pitch (`GetSystemMetricsForDpi(SM_CXSMICON)`) sólo si el ancho redondeado sigue entrando en `maxW`.
+- **La taskbar es topmost**: los menús propiedad de una ventana no-topmost se dibujan detrás y parecen cortados. Fix: owner `HWND_TOPMOST` sólo durante `TrackPopupMenu` y `HWND_NOTOPMOST` al volver. Para el tooltip, re-elevarlo con `HWND_TOPMOST` en `WM_SHOWWINDOW`.
+- **Nunca guardar el WNDPROC original en `GWLP_USERDATA`** al subclassear un control común: el tooltip usa ese campo. Usar una estática.
+- Validación de UI sin manos: clic sintético (`PostMessage` del mensaje del widget) + captura de pantalla; ESC se postea directo a la ventana `#32768` porque el `PostMessage` no da foreground.
+
 ## Skeletons
 
 ### Etapa 1 — Métricas nativas sin admin
