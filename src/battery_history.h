@@ -9,4 +9,6 @@ void Initialize(bool demo);
 void Observe(const std::wstring& key, int percent, bool charging);
 // Non-modal native Win32 history viewer; device identity remains the original key.
 void Show(HWND owner, const std::wstring& key, const std::wstring& displayName);
+// Updates open viewer window title, button labels and repaints for the active language.
+void RefreshLanguage();
 } // namespace battery_history

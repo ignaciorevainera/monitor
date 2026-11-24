@@ -1186,6 +1186,7 @@ void SetLanguage(const std::wstring& code) {
     i18n::SetChoice(code);
     RedrawAll();  // tray tooltips and the placeholder text
     UpdateWidget();
+    battery_history::RefreshLanguage();
 }
 
 void SetStacked(bool on) {

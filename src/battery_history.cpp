@@ -3,6 +3,8 @@
 #include "runtime_estimate.h"
 #include "i18n.h"
 
+#include <commctrl.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <ctime>
@@ -17,6 +19,8 @@ bool g_demo = false;
 std::wstring g_file;
 HWND g_view = nullptr;
 HWND g_btn24 = nullptr, g_btn7 = nullptr, g_btn30 = nullptr, g_btnClear = nullptr;
+HWND g_hotButton = nullptr;
+int g_btnWidths[4] = { 0, 0, 0, 0 };  // 24h, 7d, 30d, clear; measured from the active language
 std::wstring g_key, g_name;
 int g_days = 7;
 constexpr int k24Hours = 201, k7Days = 202, k30Days = 203, kClear = 204;
@@ -133,13 +137,13 @@ std::vector<Sample> Visible(int64_t now) {
 // Battery history viewer: DPI-aware, dark, compact metrics and conservative discharge ETA.
 // Follows the Windows app theme (AppsUseLightTheme), like the rest of the app.
 struct Palette {
-    COLORREF bg, panel, chart, border, grid, text, muted, blue, green, red, btnDown, btnActive, btnDisabledText;
+    COLORREF bg, panel, grid, text, muted, blue, green, red, btnDown, btnActive, btnDisabledText;
 };
-constexpr Palette kDark = { RGB(12, 17, 28), RGB(22, 30, 45), RGB(15, 23, 37), RGB(47, 63, 83), RGB(42, 55, 74),
+constexpr Palette kDark = { RGB(12, 17, 28), RGB(22, 30, 45), RGB(42, 55, 74),
                             RGB(232, 240, 252), RGB(165, 182, 202), RGB(91, 166, 255), RGB(59, 215, 158),
                             RGB(255, 132, 147), RGB(38, 59, 83), RGB(31, 67, 112), RGB(102, 117, 136) };
-constexpr Palette kLight = { RGB(243, 245, 248), RGB(255, 255, 255), RGB(250, 251, 253), RGB(209, 215, 224),
-                             RGB(228, 232, 238), RGB(24, 32, 44), RGB(92, 104, 120), RGB(0, 103, 192),
+constexpr Palette kLight = { RGB(243, 245, 248), RGB(255, 255, 255), RGB(228, 232, 238),
+                             RGB(24, 32, 44), RGB(92, 104, 120), RGB(0, 103, 192),
                              RGB(16, 137, 62), RGB(196, 43, 28), RGB(214, 226, 240), RGB(224, 236, 252),
                              RGB(160, 168, 180) };
 bool g_light = false;
@@ -190,19 +194,41 @@ void SetControlFont(HWND h) {
         g_uiFont ? g_uiFont : GetStockObject(DEFAULT_GUI_FONT)), TRUE);
 }
 
+int TextWidthPx(HDC dc, const wchar_t* s) {
+    SIZE sz{};
+    if (!dc || !s) return 0;
+    GetTextExtentPoint32W(dc, s, static_cast<int>(wcslen(s)), &sz);
+    return sz.cx;
+}
+
 void Layout(HWND w) {
     RECT rect{};
     GetClientRect(w, &rect);
     const int right = rect.right;
-    const int margin = Ui(w, 24);
-    const int y = Ui(w, 18);
-    const int height = Ui(w, 38);
-    const int gap = Ui(w, 10);
-    const int buttonWidth = Ui(w, 150);
-    if (g_btn24) MoveWindow(g_btn24, margin, y, buttonWidth, height, TRUE);
-    if (g_btn7) MoveWindow(g_btn7, margin + buttonWidth + gap, y, buttonWidth, height, TRUE);
-    if (g_btn30) MoveWindow(g_btn30, margin + 2 * (buttonWidth + gap), y, buttonWidth, height, TRUE);
-    if (g_btnClear) MoveWindow(g_btnClear, right - margin - Ui(w, 192), y, Ui(w, 192), height, TRUE);
+    const int margin = Ui(w, 16);
+    const int y = Ui(w, g_demo ? 64 : 48);
+    const int height = Ui(w, 28);
+    const int gap = Ui(w, 6);
+    // Button widths follow their labels, so Spanish does not truncate them.
+    const wchar_t* labels[4] = { T(L"Last 24 hours"), T(L"Last 7 days"), T(L"Last 30 days"), T(L"Clear device history") };
+    HWND* buttons[4] = { &g_btn24, &g_btn7, &g_btn30, &g_btnClear };
+    HDC dc = GetDC(w);
+    HGDIOBJ oldFont = dc ? SelectObject(dc, g_uiFont ? g_uiFont : GetStockObject(DEFAULT_GUI_FONT)) : nullptr;
+    int total = 3 * gap;
+    for (int i = 0; i < 4; i++) {
+        g_btnWidths[i] = TextWidthPx(dc, labels[i]) + Ui(w, 20);
+        g_btnWidths[i] = std::max(g_btnWidths[i], Ui(w, i == 3 ? 150 : 96));
+        total += g_btnWidths[i];
+    }
+    if (dc) {
+        if (oldFont) SelectObject(dc, oldFont);
+        ReleaseDC(w, dc);
+    }
+    int x = std::max(margin, right - margin - total);
+    for (int i = 0; i < 4; i++) {
+        if (*buttons[i]) MoveWindow(*buttons[i], x, y, g_btnWidths[i], height, TRUE);
+        x += g_btnWidths[i] + gap;
+    }
 }
 
 void Label(HDC dc, const std::wstring& str, RECT r, COLORREF color,
@@ -212,16 +238,10 @@ void Label(HDC dc, const std::wstring& str, RECT r, COLORREF color,
     DrawTextW(dc, str.c_str(), static_cast<int>(str.size()), &r, flags | DT_NOPREFIX);
 }
 
-void RoundedPanel(HDC dc, const RECT& r, COLORREF fill, COLORREF outline, int radius = 14) {
-    HBRUSH brush = CreateSolidBrush(fill);
-    HPEN pen = CreatePen(PS_SOLID, 1, outline);
-    HGDIOBJ oldBrush = SelectObject(dc, brush);
-    HGDIOBJ oldPen = SelectObject(dc, pen);
-    RoundRect(dc, r.left, r.top, r.right, r.bottom, radius, radius);
-    SelectObject(dc, oldPen);
-    SelectObject(dc, oldBrush);
-    DeleteObject(pen);
-    DeleteObject(brush);
+int MeasureTextWidth(HDC dc, const std::wstring& str) {
+    RECT r{0, 0, 0, 0};
+    DrawTextW(dc, str.c_str(), static_cast<int>(str.size()), &r, DT_LEFT | DT_SINGLELINE | DT_CALCRECT | DT_NOPREFIX);
+    return r.right - r.left;
 }
 
 void DrawHistoryButton(const DRAWITEMSTRUCT* item) {
@@ -229,36 +249,67 @@ void DrawHistoryButton(const DRAWITEMSTRUCT* item) {
     const bool disabled = (item->itemState & ODS_DISABLED) != 0;
     const bool down = (item->itemState & ODS_SELECTED) != 0;
     const bool focused = (item->itemState & ODS_FOCUS) != 0;
+    const bool hot = g_hotButton == item->hwndItem;
     const bool active = (item->CtlID == k24Hours && g_days == 1) ||
                         (item->CtlID == k7Days && g_days == 7) ||
                         (item->CtlID == k30Days && g_days == 30);
     const bool clear = item->CtlID == kClear;
     const COLORREF background = disabled ? P().bg : down ? P().btnDown :
-                                active ? P().btnActive : P().panel;
-    const COLORREF outline = disabled ? P().grid : (active || focused) ? P().blue : P().border;
+                                (!clear && active) ? P().btnActive :
+                                hot ? P().panel : P().bg;
     const COLORREF textColor = disabled ? P().btnDisabledText : clear ? P().red : active ? P().text : P().muted;
-    HBRUSH corners = CreateSolidBrush(P().bg);  // behind the rounded corners, instead of the button's white
-    FillRect(item->hDC, &item->rcItem, corners);
-    DeleteObject(corners);
-    RoundedPanel(item->hDC, item->rcItem, background, outline, 12);
+    HBRUSH fill = CreateSolidBrush(background);
+    FillRect(item->hDC, &item->rcItem, fill);
+    DeleteObject(fill);
+    if (focused && !disabled) {
+        const int lineH = std::max(1, Ui(item->hwndItem, 2));
+        RECT underline{item->rcItem.left, item->rcItem.bottom - lineH, item->rcItem.right, item->rcItem.bottom};
+        HBRUSH accent = CreateSolidBrush(P().blue);
+        FillRect(item->hDC, &underline, accent);
+        DeleteObject(accent);
+    }
     wchar_t text[160]{};
     GetWindowTextW(item->hwndItem, text, 160);
     HFONT oldFont = static_cast<HFONT>(SelectObject(item->hDC,
         g_uiFont ? g_uiFont : GetStockObject(DEFAULT_GUI_FONT)));
     RECT label = item->rcItem;
-    InflateRect(&label, -Ui(item->hwndItem, 8), 0);
+    InflateRect(&label, -Ui(item->hwndItem, 4), 0);
     Label(item->hDC, text, label, textColor, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
     SelectObject(item->hDC, oldFont);
-    // The blue border above is the keyboard-focus indicator, so DrawFocusRect is not needed.
+}
+
+// Owner-draw buttons do not receive ODS_HOTLIGHT; track the pointer so hover has feedback.
+LRESULT CALLBACK ButtonProc(HWND h, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR, DWORD_PTR) {
+    switch (msg) {
+        case WM_MOUSEMOVE:
+            if (g_hotButton != h) {
+                g_hotButton = h;
+                InvalidateRect(h, nullptr, TRUE);
+            }
+            {
+                TRACKMOUSEEVENT track{ sizeof(track), TME_LEAVE, h, 0 };
+                TrackMouseEvent(&track);
+            }
+            break;
+        case WM_MOUSELEAVE:
+            if (g_hotButton == h) {
+                g_hotButton = nullptr;
+                InvalidateRect(h, nullptr, TRUE);
+            }
+            break;
+        case WM_NCDESTROY:
+            RemoveWindowSubclass(h, ButtonProc, 1);
+            if (g_hotButton == h) g_hotButton = nullptr;
+            break;
+    }
+    return DefSubclassProc(h, msg, wp, lp);
 }
 
 void DrawStat(HWND w, HDC dc, const RECT& r, const wchar_t* title,
               const std::wstring& value, COLORREF valueColor) {
-    RoundedPanel(dc, r, P().panel, P().border, Ui(w, 12));
-    const int pad = Ui(w, 14);
-    Label(dc, T(title), RECT{r.left + pad, r.top + Ui(w, 7), r.right - pad, r.top + Ui(w, 34)}, P().muted);
+    Label(dc, T(title), RECT{r.left, r.top, r.right, r.top + Ui(w, 20)}, P().muted);
     HFONT old = static_cast<HFONT>(SelectObject(dc, g_uiValue ? g_uiValue : GetStockObject(DEFAULT_GUI_FONT)));
-    Label(dc, value, RECT{r.left + pad, r.top + Ui(w, 35), r.right - pad, r.bottom - Ui(w, 7)}, valueColor);
+    Label(dc, value, RECT{r.left, r.top + Ui(w, 20), r.right, r.bottom}, valueColor);
     SelectObject(dc, old);
 }
 
@@ -291,24 +342,23 @@ void Paint(HWND w) {
     HFONT oldFont = static_cast<HFONT>(SelectObject(dc, g_uiFont ? g_uiFont : GetStockObject(DEFAULT_GUI_FONT)));
     SetBkMode(dc, TRANSPARENT);
 
-    const int margin = Ui(w, 24);
+    const int margin = Ui(w, 16);
     const int64_t now = UtcNow();
     const auto points = Visible(now);
     const Stats stats = Summarize(points);
     const auto forecastPoints = g_demo ? DemoSamples(now) : g_store.For(g_key, now - kRetentionSeconds, now);
     const RuntimeEstimate forecast = EstimateRuntime(forecastPoints, now);
 
-    // Headline and a separate subtitle row: they never overlap statistic cards.
     HFONT saved = static_cast<HFONT>(SelectObject(dc, g_uiTitle ? g_uiTitle : GetStockObject(DEFAULT_GUI_FONT)));
     Label(dc, std::wstring(T(L"Battery history")) + L"  •  " + g_name,
-          RECT{margin, Ui(w, 73), width - margin, Ui(w, 113)}, P().text);
+          RECT{margin, Ui(w, 16), width - margin, Ui(w, 44)}, P().text);
     SelectObject(dc, saved);
     if (g_demo) {
         Label(dc, T(L"Demo readings (not saved)"),
-              RECT{margin, Ui(w, 111), width - margin, Ui(w, 139)}, P().muted);
+              RECT{margin, Ui(w, 44), width - margin, Ui(w, 60)}, P().muted);
     }
 
-    const int gap = Ui(w, 10);
+    const int gap = Ui(w, 12);
     const int cardsAvailable = width - 2 * margin - 4 * gap;
     const int cardWidth = cardsAvailable / 5;
     std::wstring delta = L"—";
@@ -326,16 +376,13 @@ void Paint(HWND w) {
         std::to_wstring(stats.count)
     };
     const wchar_t* headings[] = {L"Latest", L"Lowest", L"Highest", L"Change", L"Readings"};
+    const int statsTop = Ui(w, g_demo ? 108 : 92);
     for (int i = 0; i < 5; ++i) {
         const int x = margin + i * (cardWidth + gap);
-        RECT card{x, Ui(w, 148), x + cardWidth, Ui(w, 224)};
+        RECT card{x, statsTop, x + cardWidth, statsTop + Ui(w, 52)};
         DrawStat(w, dc, card, headings[i], values[i], i == 3 ? deltaColor : i == 0 ? P().blue : P().text);
     }
 
-    RECT eta{margin, Ui(w, 237), width - margin, Ui(w, 318)};
-    RoundedPanel(dc, eta, P().panel, P().border, Ui(w, 12));
-    Label(dc, T(L"Estimated time to empty"),
-          RECT{eta.left + Ui(w, 16), eta.top + Ui(w, 7), eta.right - Ui(w, 20), eta.top + Ui(w, 34)}, P().muted);
     std::wstring etaValue, etaDetails;
     COLORREF etaColor = P().blue;
     switch (forecast.state) {
@@ -364,24 +411,34 @@ void Paint(HWND w) {
             etaDetails = T(L"Requires 4 readings, 2 hours and 3 percentage points of decline.");
             break;
     }
-    saved = static_cast<HFONT>(SelectObject(dc, g_uiValue ? g_uiValue : GetStockObject(DEFAULT_GUI_FONT)));
-    // The estimate gets its own second line and does not compete for space with the heading.
-    Label(dc, etaValue, RECT{eta.left + Ui(w, 16), eta.top + Ui(w, 34),
-                              eta.left + (eta.right - eta.left) / 2 - Ui(w, 8), eta.bottom - Ui(w, 7)}, etaColor);
-    SelectObject(dc, saved);
-    // Rate and method notes in the right half, avoiding truncation on smaller windows.
-    Label(dc, etaDetails, RECT{eta.left + (eta.right - eta.left) / 2, eta.top + Ui(w, 43),
-                               eta.right - Ui(w, 16), eta.bottom - Ui(w, 5)}, P().muted);
+    const int etaTop = statsTop + Ui(w, 66);
+    const int etaBottom = etaTop + Ui(w, 26);
+    const std::wstring etaTitle = T(L"Estimated time to empty");
+    const int etaTitleW = MeasureTextWidth(dc, etaTitle);
+    Label(dc, etaTitle, RECT{margin, etaTop, margin + etaTitleW, etaBottom}, P().muted);
 
-    RECT panel{margin, Ui(w, 332), width - margin, height - Ui(w, 22)};
-    if (panel.bottom > panel.top + Ui(w, 140)) {
-        RoundedPanel(dc, panel, P().panel, P().border, Ui(w, 14));
+    saved = static_cast<HFONT>(SelectObject(dc, g_uiBold ? g_uiBold : GetStockObject(DEFAULT_GUI_FONT)));
+    const int etaValX = margin + etaTitleW + Ui(w, 12);
+    const int etaValW = MeasureTextWidth(dc, etaValue);
+    Label(dc, etaValue, RECT{etaValX, etaTop, std::min(width - margin, etaValX + etaValW), etaBottom}, etaColor);
+    SelectObject(dc, saved);
+
+    const int etaDetX = etaValX + etaValW + Ui(w, 14);
+    const bool stackDetails = etaDetX + MeasureTextWidth(dc, etaDetails) > width - margin;
+    if (stackDetails) {
+        Label(dc, etaDetails, RECT{margin, etaBottom, width - margin, etaBottom + Ui(w, 18)}, P().muted);
+    } else {
+        Label(dc, etaDetails, RECT{etaDetX, etaTop, width - margin, etaBottom}, P().muted);
+    }
+
+    const int graphTop = etaBottom + Ui(w, 16) + (stackDetails ? Ui(w, 18) : 0);
+    const int graphBottom = height - Ui(w, 16);
+    if (graphBottom > graphTop + Ui(w, 120)) {
         Label(dc, T(L"Blue: recorded battery; green: measured increase"),
-              RECT{panel.left + Ui(w, 18), panel.top + Ui(w, 8), panel.right - Ui(w, 12), panel.top + Ui(w, 42)}, P().muted);
-        RECT plot{panel.left + Ui(w, 78), panel.top + Ui(w, 53),
-                  panel.right - Ui(w, 21), panel.bottom - Ui(w, 61)};
+              RECT{margin, graphTop, width - margin, graphTop + Ui(w, 20)}, P().muted);
+        RECT plot{margin + Ui(w, 46), graphTop + Ui(w, 34),
+                  width - margin - Ui(w, 4), graphBottom - Ui(w, 46)};
         if (plot.right - plot.left > Ui(w, 120) && plot.bottom - plot.top > Ui(w, 68)) {
-            RoundedPanel(dc, plot, P().chart, P().chart, Ui(w, 6));
             const int graphW = plot.right - plot.left, graphH = plot.bottom - plot.top;
             HPEN grid = CreatePen(PS_SOLID, 1, P().grid);
             HPEN oldPen = static_cast<HPEN>(SelectObject(dc, grid));
@@ -391,7 +448,7 @@ void Paint(HWND w) {
                 LineTo(dc, plot.right, y);
                 // The label gutter is wide enough for 100%, including DPI scaling.
                 Label(dc, std::to_wstring(100 - i * 25) + L"%",
-                      RECT{panel.left + Ui(w, 9), y - Ui(w, 13), plot.left - Ui(w, 10), y + Ui(w, 13)},
+                      RECT{margin, y - Ui(w, 12), plot.left - Ui(w, 8), y + Ui(w, 12)},
                       P().muted, DT_RIGHT | DT_SINGLELINE | DT_VCENTER);
                 const int x = plot.left + graphW * i / 4;
                 MoveToEx(dc, x, plot.top, nullptr);
@@ -446,11 +503,11 @@ void Paint(HWND w) {
             }
             const std::wstring start = g_days == 1 ? std::wstring(T(L"24h ago")) :
                 TF(L"{days} days ago", {{L"days", std::to_wstring(g_days)}});
-            Label(dc, start, RECT{plot.left, plot.bottom + Ui(w, 5), plot.left + Ui(w, 160), plot.bottom + Ui(w, 31)}, P().muted);
-            Label(dc, T(L"Now"), RECT{plot.right - Ui(w, 65), plot.bottom + Ui(w, 5),
-                                      plot.right, plot.bottom + Ui(w, 31)}, P().muted, DT_RIGHT | DT_SINGLELINE | DT_VCENTER);
+            Label(dc, start, RECT{plot.left, plot.bottom + Ui(w, 4), plot.left + Ui(w, 160), plot.bottom + Ui(w, 24)}, P().muted);
+            Label(dc, T(L"Now"), RECT{plot.right - Ui(w, 65), plot.bottom + Ui(w, 4),
+                                      plot.right, plot.bottom + Ui(w, 24)}, P().muted, DT_RIGHT | DT_SINGLELINE | DT_VCENTER);
             Label(dc, T(L"Trend estimates are approximate; missing samples are not inferred."),
-                  RECT{plot.left, plot.bottom + Ui(w, 31), plot.right, plot.bottom + Ui(w, 57)},
+                  RECT{plot.left, plot.bottom + Ui(w, 24), plot.right, plot.bottom + Ui(w, 46)},
                   P().muted, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
         }
     }
@@ -476,8 +533,8 @@ LRESULT CALLBACK ViewProc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_CREATE: {
             ApplyTheme(w);
             g_uiFont = CreateUiFont(w, 10, FW_NORMAL);
-            g_uiBold = CreateUiFont(w, 13, FW_SEMIBOLD);
-            g_uiTitle = CreateUiFont(w, 17, FW_SEMIBOLD);
+            g_uiBold = CreateUiFont(w, 11, FW_SEMIBOLD);
+            g_uiTitle = CreateUiFont(w, 15, FW_SEMIBOLD);
             g_uiValue = CreateUiFont(w, 16, FW_SEMIBOLD);
             const HINSTANCE inst = GetModuleHandleW(nullptr);
             g_btn24 = CreateWindowExW(0, L"BUTTON", T(L"Last 24 hours"),
@@ -492,14 +549,17 @@ LRESULT CALLBACK ViewProc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             g_btnClear = CreateWindowExW(0, L"BUTTON", T(L"Clear device history"),
                                         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 0, 0, 145, 28,
                                         w, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kClear)), inst, nullptr);
-            for (HWND b : {g_btn24, g_btn7, g_btn30, g_btnClear}) SetControlFont(b);
+            for (HWND b : {g_btn24, g_btn7, g_btn30, g_btnClear}) {
+                SetControlFont(b);
+                SetWindowSubclass(b, ButtonProc, 1, 0);
+            }
             EnableWindow(g_btnClear, g_demo ? FALSE : TRUE);
             Layout(w);
             return 0;
         }
         case WM_GETMINMAXINFO: {
             auto* info = reinterpret_cast<MINMAXINFO*>(lp);
-            if (info) { info->ptMinTrackSize.x = Ui(w, 880); info->ptMinTrackSize.y = Ui(w, 620); }
+            if (info) { info->ptMinTrackSize.x = Ui(w, 760); info->ptMinTrackSize.y = Ui(w, 470); }
             return 0;
         }
         case WM_SIZE: Layout(w); InvalidateRect(w, nullptr, TRUE); return 0;
@@ -588,15 +648,37 @@ void Show(HWND owner, const std::wstring& key, const std::wstring& displayName) 
     wc.lpszClassName = kWindowClass;
     if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return;
     g_days = 7;
-    RECT bounds{0, 0, 1020, 710};
+    RECT bounds{0, 0, 900, 520};
     AdjustWindowRectEx(&bounds, WS_OVERLAPPEDWINDOW, FALSE, WS_EX_APPWINDOW);
     g_view = CreateWindowExW(WS_EX_APPWINDOW, kWindowClass, title.c_str(), WS_OVERLAPPEDWINDOW,
                              CW_USEDEFAULT, CW_USEDEFAULT, bounds.right-bounds.left, bounds.bottom-bounds.top,
                              nullptr, nullptr, inst, nullptr);
     if (!g_view) return;
+    // CreateWindow runs before the window reaches its monitor, so size the client in DIPs now that
+    // its real DPI is known (a 900 px window on a 175% screen is barely 514 DIPs wide).
+    const UINT dpi = GetDpiForWindow(g_view);
+    RECT sized{0, 0, MulDiv(900, dpi, 96), MulDiv(520, dpi, 96)};
+    AdjustWindowRectExForDpi(&sized, WS_OVERLAPPEDWINDOW, FALSE, WS_EX_APPWINDOW, dpi);
+    SetWindowPos(g_view, nullptr, 0, 0, sized.right - sized.left, sized.bottom - sized.top,
+                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     ShowWindow(g_view, SW_SHOWNORMAL);
     UpdateWindow(g_view);
     SetForegroundWindow(g_view);
     (void)owner; // viewer is independent of the hidden tray message window
+}
+
+void RefreshLanguage() {
+    if (!g_view || !IsWindow(g_view)) return;
+    const std::wstring title = std::wstring(T(L"Battery history")) + L" - " + g_name;
+    SetWindowTextW(g_view, title.c_str());
+    if (g_btn24) SetWindowTextW(g_btn24, T(L"Last 24 hours"));
+    if (g_btn7) SetWindowTextW(g_btn7, T(L"Last 7 days"));
+    if (g_btn30) SetWindowTextW(g_btn30, T(L"Last 30 days"));
+    if (g_btnClear) SetWindowTextW(g_btnClear, T(L"Clear device history"));
+    Layout(g_view);  // labels changed: re-measure the buttons before repainting
+    InvalidateRect(g_view, nullptr, TRUE);
+    for (HWND b : {g_btn24, g_btn7, g_btn30, g_btnClear}) {
+        if (b) InvalidateRect(b, nullptr, TRUE);
+    }
 }
 } // namespace battery_history

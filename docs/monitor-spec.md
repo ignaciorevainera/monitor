@@ -36,7 +36,7 @@ Una sola app nativa, sin admin, que muestra en la taskbar: métricas del sistema
 | D10 | Iconos | Solo Segoe Fluent Icons, mismo renderer que baterías (CPU `EEA1`, RAM `EEA0`, GPU `E950`, temp `E957`, SSD `EDA2`, VRAM = RAM + caption `V`). Opción global de etiqueta por métrica (Icono default / Palabra corta / Ambos); dispositivos inalámbricos sin cambios |
 | D11 | Umbrales de temp | CPU/GPU 80/90 °C, SSD 65/75 °C; naranja/rojo como TraySense |
 | D12 | Clic | Clic derecho abre el menú (conserva "Abrir Administrador de tareas"); clic izquierdo abre el Administrador de tareas |
-| D13 | Idiomas | Inglés + español completos; el resto cae a inglés |
+| D13 | Idiomas | Idiomas integrados solo inglés + español (se eliminan los archivos parciales); los archivos que el usuario agregue en su carpeta `lang/` siguen funcionando |
 | D14 | Métricas default | Heredan `Mask2` de TraySense (63: todo menos SSD temp) al migrar; en installs nuevos, todo menos SSD temp |
 | D15 | Autostart | Un único mecanismo: HKCU Run (sin admin) |
 
