@@ -1421,7 +1421,7 @@ void ShowMenu() {
             }
             AppendMenuW(sub, MF_POPUP, (UINT_PTR)alertMenu, T(L"Battery alerts"));
             AppendMenuW(sub, MF_STRING, base + DEV_HISTORY, T(L"Battery history..."));
-            std::wstring line = DisplayName(*e) + L":  " + StatusText(*e) + L"   [" + T(e->st.via) + L"]";
+            std::wstring line = DisplayName(*e) + L": " + StatusText(*e) + L" [" + T(e->st.via) + L"]";
             AppendMenuW(devMenu, MF_POPUP | (IsHidden(k) ? 0 : MF_CHECKED), (UINT_PTR)sub, line.c_str());
             keys.push_back(k);
         }
