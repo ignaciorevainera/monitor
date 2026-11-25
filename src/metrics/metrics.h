@@ -4,10 +4,12 @@
 #include <cstdint>
 #include <string>
 
+#include "ai_usage.h"
+
 namespace metrics {
 
-enum class Id : int { CpuUsage = 0, CpuTemp, RamUsage, GpuUsage, GpuTemp, Vram, SsdTemp, DiskSpace };
-inline constexpr int kCount = 8;
+enum class Id : int { CpuUsage = 0, CpuTemp, RamUsage, GpuUsage, GpuTemp, Vram, SsdTemp, DiskSpace, OpenCodeUsage };
+inline constexpr int kCount = 9;
 
 enum class Where : uint8_t { Bar = 0, Tray = 1, Hidden = 2 };
 enum class DiskDisplay : uint8_t { FreeGb = 0, FreePercent = 1, UsedPercent = 2 };
@@ -17,6 +19,7 @@ struct Snapshot {
     bool ok[kCount]{};
     double diskFreeGb{};
     double diskTotalGb{};
+    AiUsage ai;
 };
 
 struct Config {
@@ -24,7 +27,7 @@ struct Config {
 };
 
 inline constexpr Config kDefaultConfig = { {
-    Where::Bar, Where::Bar, Where::Bar, Where::Bar, Where::Bar, Where::Bar, Where::Hidden, Where::Bar
+    Where::Bar, Where::Bar, Where::Bar, Where::Bar, Where::Bar, Where::Bar, Where::Hidden, Where::Bar, Where::Hidden
 } };
 
 inline constexpr uint32_t kTrayUidBase = 0x2000;

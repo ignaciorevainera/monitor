@@ -39,7 +39,7 @@ build/app_res.o: res/app.rc res/app.manifest res/app.ico res/app_light.ico build
 clean:
 	rm -rf build Monitor.exe Monitor.TempHelper.exe
 
-test: test-update-core test-update-win test-update-signature test-metrics test-overflow test-temp-file test-temp-alerts test-usage-alerts
+test: test-update-core test-update-win test-update-signature test-metrics test-ai-usage test-overflow test-temp-file test-temp-alerts test-usage-alerts
 	@mkdir -p build
 	$(CXX) -std=c++17 -O2 -Wall tests/device_aliases_test.cpp -o build/device_aliases_test.exe
 	./build/device_aliases_test.exe
@@ -143,6 +143,11 @@ test-metrics:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra tests/metrics_test.cpp src/metrics/metrics_format.cpp -o build/metrics_test.exe
 	./build/metrics_test.exe
 
+test-ai-usage:
+	@mkdir -p build
+	$(CXX) -std=c++17 -O2 -Wall -Wextra tests/ai_usage_test.cpp src/metrics/ai_usage.cpp -o build/ai_usage_test.exe
+	./build/ai_usage_test.exe
+
 test-overflow:
 	@mkdir -p build
 	$(CXX) -std=c++17 -O2 -Wall -Wextra tests/overflow_test.cpp -o build/overflow_test.exe
@@ -163,4 +168,4 @@ test-usage-alerts:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra tests/usage_alerts_test.cpp -o build/usage_alerts_test.exe
 	./build/usage_alerts_test.exe
 
-.PHONY: all clean test test-update-core test-update-win test-update-signature test-metrics test-overflow test-temp-file test-temp-alerts test-usage-alerts FORCE
+.PHONY: all clean test test-update-core test-update-win test-update-signature test-metrics test-ai-usage test-overflow test-temp-file test-temp-alerts test-usage-alerts FORCE

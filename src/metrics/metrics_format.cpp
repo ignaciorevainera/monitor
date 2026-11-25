@@ -90,6 +90,14 @@ bool SameValues(const Snapshot& a, const Snapshot& b) {
         if (std::llround(a.diskFreeGb * 10.0) != std::llround(b.diskFreeGb * 10.0)) return false;
         if (std::llround(a.diskTotalGb * 10.0) != std::llround(b.diskTotalGb * 10.0)) return false;
     }
+    if (a.ai.ok != b.ai.ok || a.ai.error != b.ai.error) return false;
+    for (int i = 0; i < 3; i++) {
+        if (a.ai.meter[i].percent != b.ai.meter[i].percent ||
+            a.ai.meter[i].limited != b.ai.meter[i].limited ||
+            a.ai.meter[i].resetsAt != b.ai.meter[i].resetsAt) {
+            return false;
+        }
+    }
     return true;
 }
 

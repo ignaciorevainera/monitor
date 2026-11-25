@@ -139,6 +139,22 @@ int main() {
         static_assert((kTrayUidBase & 0x100) == 0, "kTrayUidBase..+kCount must keep bit 8 clear");
     }
 
+    assert(kDefaultConfig.where[static_cast<int>(Id::OpenCodeUsage)] == Where::Hidden);
+
+    Config old8{};
+    const uint8_t cfg8_legacy[8] = { 1, 1, 1, 1, 1, 1, 2, 0 };
+    assert(ParseConfig(cfg8_legacy, sizeof(cfg8_legacy), old8));
+    assert(old8.where[7] == Where::Bar);
+    assert(old8.where[static_cast<int>(Id::OpenCodeUsage)] == Where::Hidden);
+
+    Snapshot a1{}, b1{};
+    a1.ai.ok = true;
+    a1.ai.meter[0] = { 60, false, "2026-11-21T15:00:00.000Z" };
+    b1 = a1;
+    assert(SameValues(a1, b1));
+    b1.ai.meter[0].percent = 61;
+    assert(!SameValues(a1, b1));
+
     std::puts("metrics_test: all passed");
     return 0;
 }
