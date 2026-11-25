@@ -223,7 +223,7 @@ git commit -m "feat: sample free space of the system drive"
 - Consumes: `DiskDisplay`, `FormatGb`, `DiskSeverity`, `Snapshot::diskFreeGb/diskTotalGb/val[DiskSpace]` (Tasks 1-2).
 - Produces: `g_diskDisplay`, `LoadDiskDisplay()`, `SaveDiskDisplay()`, `DiskText(const metrics::Snapshot&, metrics::DiskDisplay, bool)`, `DiskTip(const metrics::Snapshot&)`.
 
-- [ ] **Step 1: Agregar config persistida**
+- [x] **Step 1: Agregar config persistida**
 
 Global: `metrics::DiskDisplay g_diskDisplay = metrics::DiskDisplay::FreeGb;`
 
@@ -247,7 +247,7 @@ En el arranque, después de `g_metricIntervalMs = LoadMetricIntervalMs();`:
 g_diskDisplay = LoadDiskDisplay();
 ```
 
-- [ ] **Step 2: Agregar el ítem y su texto**
+- [x] **Step 2: Agregar el ítem y su texto**
 
 En `kMetrics`, al final:
 
@@ -292,7 +292,7 @@ int sev = !ok ? 0 : isDisk ? metrics::DiskSeverity(g_metricSnap.val[idx])
 
 El tooltip del widget usa `DiskTip(g_metricSnap)` cuando `isDisk`; no duplicar el texto genérico.
 
-- [ ] **Step 3: Bandeja**
+- [x] **Step 3: Bandeja**
 
 En `ApplyMetricTray`, agregar `const bool isDisk = id == static_cast<int>(metrics::Id::DiskSpace);`.
 - `sev`: `isDisk && ok ? metrics::DiskSeverity(g_metricSnap.val[id]) : ...` (dejar temps como están).
@@ -302,7 +302,7 @@ En `ApplyMetricTray`, agregar `const bool isDisk = id == static_cast<int>(metric
 - `tip`: `isDisk ? DiskTip(g_metricSnap) : ...` y no agregar la nota de “thermal zone”.
 - `iconSig`: para disco incluir `g_diskDisplay` y `llround(diskFreeGb * 10)` además de `val/sev`, para que el icono se redibuje al cambiar de modo aunque el porcentaje no cambie.
 
-- [ ] **Step 4: Menú**
+- [x] **Step 4: Menú**
 
 Agregar IDs al enum:
 
@@ -333,20 +333,20 @@ ApplyAllMetricTray();
 
 El submenú de ubicación por métrica ya se genera recorriendo `kMetrics`, así que “Disk space” aparece sin código extra.
 
-- [ ] **Step 4b: Migración y `--metrics-dump`**
+- [x] **Step 4b: Migración y `--metrics-dump`**
 
 `MigrateTraySense` (`src/main.cpp:447-461`): recorrer sólo los primeros 7 ids contra `Mask2` y rellenar `7..kCount-1` con `kDefaultConfig.where[i]`, de modo que un migrado de TraySense también reciba el disco en `Where::Bar`.
 
 En el bloque de `--metrics-dump` (`src/main.cpp:1958-1986`), agregar al final de la línea `disk=<% libre>` (mismo patrón `add(...)`) y `disk_gb=<GB libres>` con `snprintf("%.1f")` sobre `diskFreeGb` cuando `ok[DiskSpace]`.
 
-- [ ] **Step 5: Verificar**
+- [x] **Step 5: Verificar**
 
 Run: `make test`
 Expected: suite completa verde.
 
 Manual: alternar los tres modos y confirmar que el strip muestra el modo elegido, la bandeja siempre el % usado y el tooltip GB/%; cambiar ubicación a bandeja/oculta; reiniciar y confirmar persistencia. Automático: `Monitor.exe --metrics-dump` imprime `disk=` y `disk_gb=` coherentes con la unidad del sistema.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/main.cpp

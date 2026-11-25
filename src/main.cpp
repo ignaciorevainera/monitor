@@ -62,6 +62,7 @@ enum MenuId : UINT {
     ID_USAGE_ALERTS = 156,
     ID_USAGE_THRESH_FIRST = 157,  // "Usage alerts at": 157..159 (85/90/95%)
     ID_TEMP_THRESH_FIRST = 160,   // "Temperature alerts at": 160..162 (70/75/80 C)
+    ID_DISK_MODE_FIRST = 163,     // 163..165: FreeGb / FreePercent / UsedPercent
     ID_POLL_FIRST = 500,  // "Check battery every": ID_POLL_FIRST + 0..7
     ID_METRIC_INTERVAL_FIRST = 600,  // "Refresh rate": ID_METRIC_INTERVAL_FIRST + 0..2
     ID_METRIC_WHERE_FIRST = 700,     // per-metric location: ID_METRIC_WHERE_FIRST + id * 4 + where
@@ -88,6 +89,7 @@ constexpr DWORD METRIC_POLL_SECONDS[] = { 1, 2, 5 };
 constexpr int USAGE_THRESHOLDS[] = { 85, 90, 95 };
 constexpr int TEMP_THRESHOLDS[] = { 70, 75, 80 };
 DWORD g_metricIntervalMs = 5000;
+metrics::DiskDisplay g_diskDisplay = metrics::DiskDisplay::FreeGb;
 metrics::Config g_metricCfg = metrics::kDefaultConfig;
 metrics::Snapshot g_metricSnap{};
 bool g_hasMetricSnap = false;
@@ -121,6 +123,7 @@ constexpr MetricSpec kMetrics[] = {
     { metrics::Id::GpuTemp,  0xE957, L"GPU temperature", nullptr, L"GPU\u00B0" },
     { metrics::Id::Vram,     0xEEA0, L"VRAM",            L"V",    L"VRAM" },
     { metrics::Id::SsdTemp,  0xEDA2, L"SSD temperature", nullptr, L"SSD\u00B0" },
+    { metrics::Id::DiskSpace, 0xE770, L"Disk space",     L"D",    L"DISK" },
 };
 
 // The component an alert belongs to, so its balloon carries that part's icon (CPU, RAM...).
@@ -388,6 +391,15 @@ void SaveMetricLabelStyle(int style) {
     DWORD v = static_cast<DWORD>(style);
     RegSetKeyValueW(HKEY_CURRENT_USER, kSettingsKey, L"MetricLabelStyle", REG_DWORD, &v, sizeof(v));
 }
+metrics::DiskDisplay LoadDiskDisplay() {
+    DWORD v = 0, sz = sizeof(v);
+    RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, L"DiskDisplay", RRF_RT_REG_DWORD, nullptr, &v, &sz);
+    return v <= 2 ? static_cast<metrics::DiskDisplay>(v) : metrics::DiskDisplay::FreeGb;
+}
+void SaveDiskDisplay(metrics::DiskDisplay mode) {
+    DWORD v = static_cast<DWORD>(mode);
+    RegSetKeyValueW(HKEY_CURRENT_USER, kSettingsKey, L"DiskDisplay", REG_DWORD, &v, sizeof(v));
+}
 DWORD LoadPollSeconds() {
     DWORD v = 60, sz = sizeof(v);
     RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, L"PollIntervalSeconds", RRF_RT_REG_DWORD, nullptr, &v, &sz);
@@ -455,7 +467,8 @@ void MigrateTraySense() {
             type == REG_DWORD && valSz == sizeof(DWORD)) {
             metrics::Where where[metrics::kCount];
             for (int i = 0; i < metrics::kCount; i++) {
-                where[i] = (val & (1u << i)) ? metrics::Where::Bar : metrics::Where::Hidden;
+                where[i] = i < 7 ? ((val & (1u << i)) ? metrics::Where::Bar : metrics::Where::Hidden)
+                                 : metrics::kDefaultConfig.where[i];
             }
             RegSetKeyValueW(HKEY_CURRENT_USER, kSettingsKey, L"MetricsWhere", REG_BINARY,
                             where, static_cast<DWORD>(sizeof(where)));
@@ -868,6 +881,26 @@ const MetricSpec* FindMetricSpec(int id) {
     return nullptr;
 }
 
+std::wstring DiskText(const metrics::Snapshot& s, metrics::DiskDisplay mode, bool ok) {
+    if (!ok) return L"--";
+    switch (mode) {
+        case metrics::DiskDisplay::FreePercent:
+            return metrics::FormatPercent(s.val[static_cast<int>(metrics::Id::DiskSpace)], true);
+        case metrics::DiskDisplay::UsedPercent:
+            return metrics::FormatPercent(100.0 - s.val[static_cast<int>(metrics::Id::DiskSpace)], true);
+        default:
+            return metrics::FormatGb(s.diskFreeGb, true);
+    }
+}
+std::wstring DiskTip(const metrics::Snapshot& s) {
+    bool ok = s.ok[static_cast<int>(metrics::Id::DiskSpace)];
+    return TF(L"{name}: {free} free of {total} ({percent})",
+              { { L"name", T(L"Disk space") },
+                { L"free", metrics::FormatGb(s.diskFreeGb, ok) },
+                { L"total", metrics::FormatGb(s.diskTotalGb, ok) },
+                { L"percent", metrics::FormatPercent(s.val[static_cast<int>(metrics::Id::DiskSpace)], ok) } });
+}
+
 void ApplyMetricTray(int id) {
     if (id < 0 || id >= metrics::kCount) return;
     const MetricSpec* spec = FindMetricSpec(id);
@@ -884,14 +917,22 @@ void ApplyMetricTray(int id) {
         return;
     }
     bool ok = g_hasMetricSnap && g_metricSnap.ok[id];
+    const bool isDisk = id == static_cast<int>(metrics::Id::DiskSpace);
     bool isTemp = id == static_cast<int>(metrics::Id::CpuTemp) ||
                   id == static_cast<int>(metrics::Id::GpuTemp) ||
                   id == static_cast<int>(metrics::Id::SsdTemp);
-    int sev = (isTemp && ok) ? metrics::SeverityFor(id, g_metricSnap.val[id]) : 0;
-    int val = ok ? (isTemp ? static_cast<int>(std::lround(g_metricSnap.val[id]))
-                           : std::clamp(static_cast<int>(g_metricSnap.val[id] + 0.5), 0, 100))
+    int sev = !ok ? 0
+                  : isDisk ? metrics::DiskSeverity(g_metricSnap.val[id])
+                  : isTemp ? metrics::SeverityFor(id, g_metricSnap.val[id]) : 0;
+    int val = ok ? (isDisk ? std::clamp(static_cast<int>(std::lround(100.0 - g_metricSnap.val[id])), 0, 100)
+                           : isTemp ? static_cast<int>(std::lround(g_metricSnap.val[id]))
+                                    : std::clamp(static_cast<int>(g_metricSnap.val[id] + 0.5), 0, 100))
                  : -1;
     std::wstring sig = std::to_wstring(val) + (ok ? L"1" : L"0") + std::to_wstring(sev) + (g_lightTaskbar ? L"l" : L"k");
+    if (isDisk) {
+        sig += L"d" + std::to_wstring(static_cast<int>(g_diskDisplay)) + L"_" +
+               std::to_wstring(ok ? std::llround(g_metricSnap.diskFreeGb * 10.0) : -1);
+    }
     if (sig != e.iconSig || !e.icon) {
         if (e.icon) DestroyIcon(e.icon);
         std::wstring shortVal = ok ? std::to_wstring(val) : L"--";
@@ -905,9 +946,10 @@ void ApplyMetricTray(int id) {
         e.icon = RenderIcon(shortVal, barPct, tc, tc, !ok);
         e.iconSig = sig;
     }
-    std::wstring tip = std::wstring(T(spec->name)) + L": " +
-                       (isTemp ? metrics::FormatTemp(g_metricSnap.val[id], ok)
-                               : metrics::FormatPercent(g_metricSnap.val[id], ok));
+    std::wstring tip = isDisk ? DiskTip(g_metricSnap)
+                              : (std::wstring(T(spec->name)) + L": " +
+                                 (isTemp ? metrics::FormatTemp(g_metricSnap.val[id], ok)
+                                         : metrics::FormatPercent(g_metricSnap.val[id], ok)));
     if (id == static_cast<int>(metrics::Id::CpuTemp)) {
         tip += std::wstring(L" (") + T(L"Thermal zone reading, not a CPU die sensor") + L")";
     }
@@ -966,12 +1008,15 @@ void UpdateWidget() {
         int idx = static_cast<int>(m.id);
         if (g_metricCfg.where[idx] != metrics::Where::Bar) continue;
         bool ok = g_hasMetricSnap && g_metricSnap.ok[idx];
+        bool isDisk = m.id == metrics::Id::DiskSpace;
         bool isTemp = m.id == metrics::Id::CpuTemp || m.id == metrics::Id::GpuTemp || m.id == metrics::Id::SsdTemp;
-        std::wstring valText = isTemp ? metrics::FormatTemp(g_metricSnap.val[idx], ok)
-                                      : metrics::FormatPercent(g_metricSnap.val[idx], ok);
-        int sev = (isTemp && ok) ? metrics::SeverityFor(idx, g_metricSnap.val[idx]) : 0;
+        std::wstring valText = isDisk ? DiskText(g_metricSnap, g_diskDisplay, ok)
+                            : isTemp ? metrics::FormatTemp(g_metricSnap.val[idx], ok)
+                                     : metrics::FormatPercent(g_metricSnap.val[idx], ok);
+        int sev = !ok ? 0 : isDisk ? metrics::DiskSeverity(g_metricSnap.val[idx])
+                  : isTemp ? metrics::SeverityFor(idx, g_metricSnap.val[idx]) : 0;
         if (!tip.empty()) tip += L"\n";
-        tip += std::wstring(T(m.name)) + L": " + valText;
+        tip += isDisk ? DiskTip(g_metricSnap) : (std::wstring(T(m.name)) + L": " + valText);
         if (m.id == metrics::Id::CpuTemp) {
             tip += std::wstring(L" (") + T(L"Thermal zone reading, not a CPU die sensor") + L")";
         }
@@ -1508,6 +1553,13 @@ void ShowMenu() {
         }
         if (checkedRate) CheckMenuRadioItem(rate, ID_METRIC_INTERVAL_FIRST, ID_METRIC_INTERVAL_FIRST + rateCount - 1, checkedRate, MF_BYCOMMAND);
         AppendMenuW(mm, MF_POPUP, (UINT_PTR)rate, T(L"Refresh rate"));
+        HMENU disk = CreatePopupMenu();
+        AppendMenuW(disk, MF_STRING, ID_DISK_MODE_FIRST + 0, T(L"Free space (GB)"));
+        AppendMenuW(disk, MF_STRING, ID_DISK_MODE_FIRST + 1, T(L"Free space (%)"));
+        AppendMenuW(disk, MF_STRING, ID_DISK_MODE_FIRST + 2, T(L"Used space (%)"));
+        CheckMenuRadioItem(disk, ID_DISK_MODE_FIRST, ID_DISK_MODE_FIRST + 2,
+                           ID_DISK_MODE_FIRST + static_cast<UINT>(g_diskDisplay), MF_BYCOMMAND);
+        AppendMenuW(mm, MF_POPUP, (UINT_PTR)disk, T(L"Disk space shows"));
         AppendMenuW(mm, MF_STRING | (g_groupTempsWithUsage ? MF_CHECKED : 0), ID_METRIC_GROUP, T(L"Group temperature with usage"));
         HMENU lbl = CreatePopupMenu();
         AppendMenuW(lbl, MF_STRING, ID_LABEL_FIRST + 0, T(L"Icon"));
@@ -1653,6 +1705,11 @@ void ShowMenu() {
                 g_metricLabelStyle = static_cast<int>(cmd - ID_LABEL_FIRST);
                 SaveMetricLabelStyle(g_metricLabelStyle);
                 UpdateWidget();
+            } else if (cmd >= ID_DISK_MODE_FIRST && cmd < ID_DISK_MODE_FIRST + 3) {
+                g_diskDisplay = static_cast<metrics::DiskDisplay>(cmd - ID_DISK_MODE_FIRST);
+                SaveDiskDisplay(g_diskDisplay);
+                UpdateWidget();
+                ApplyAllMetricTray();
             } else if (cmd >= ID_METRIC_INTERVAL_FIRST && cmd < ID_METRIC_INTERVAL_FIRST + ARRAYSIZE(METRIC_POLL_SECONDS)) {
                 g_metricIntervalMs = METRIC_POLL_SECONDS[cmd - ID_METRIC_INTERVAL_FIRST] * 1000;
                 SaveMetricIntervalMs(g_metricIntervalMs);
@@ -1978,6 +2035,12 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
             add("gpu_temp", metrics::Id::GpuTemp);
             add("vram", metrics::Id::Vram);
             add("ssd_temp", metrics::Id::SsdTemp);
+            add("disk", metrics::Id::DiskSpace);
+            if (snap.ok[static_cast<int>(metrics::Id::DiskSpace)]) {
+                char buf[64];
+                std::snprintf(buf, sizeof(buf), "%sdisk_gb=%.1f", line.empty() ? "" : " ", snap.diskFreeGb);
+                line += buf;
+            }
             line += "\r\n";
             DWORD w = 0;
             WriteFile(out, line.data(), static_cast<DWORD>(line.size()), &w, nullptr);
@@ -2053,6 +2116,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     MigrateTraySense();
     LoadMetricsWhere();
     g_metricIntervalMs = LoadMetricIntervalMs();
+    g_diskDisplay = LoadDiskDisplay();
     widget::SetStacked(g_stacked);
     widget::SetBackground(g_widgetBackground);  // remembered by the widget across re-creation
     i18n::Init();
