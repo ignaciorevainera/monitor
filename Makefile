@@ -39,7 +39,7 @@ build/app_res.o: res/app.rc res/app.manifest res/app.ico res/app_light.ico build
 clean:
 	rm -rf build Monitor.exe Monitor.TempHelper.exe
 
-test: test-update-core test-update-win test-update-signature test-metrics test-ai-usage test-opencode-token test-overflow test-temp-file test-temp-alerts test-usage-alerts
+test: test-update-core test-update-win test-update-signature test-metrics test-ai-usage test-opencode-token test-opencode-icon test-overflow test-temp-file test-temp-alerts test-usage-alerts
 	@mkdir -p build
 	$(CXX) -std=c++17 -O2 -Wall tests/device_aliases_test.cpp -o build/device_aliases_test.exe
 	./build/device_aliases_test.exe
@@ -173,4 +173,10 @@ test-usage-alerts:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra tests/usage_alerts_test.cpp -o build/usage_alerts_test.exe
 	./build/usage_alerts_test.exe
 
-.PHONY: all clean test test-update-core test-update-win test-update-signature test-metrics test-ai-usage test-opencode-token test-overflow test-temp-file test-temp-alerts test-usage-alerts FORCE
+test-opencode-icon:
+	@mkdir -p build
+	$(CXX) -std=c++17 -O2 -Wall tests/opencode_icon_test.cpp src/opencode_icon.cpp src/opencode_icon_data.cpp \
+	    -o build/opencode_icon_test.exe -lgdi32 -luser32
+	./build/opencode_icon_test.exe
+
+.PHONY: all clean test test-update-core test-update-win test-update-signature test-metrics test-ai-usage test-opencode-token test-opencode-icon test-overflow test-temp-file test-temp-alerts test-usage-alerts FORCE
