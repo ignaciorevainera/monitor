@@ -47,4 +47,9 @@ void SetSamplerInterval(unsigned long ms);
 void StopSampler();
 unsigned long __stdcall MetricsWorker(void* unused);
 
+bool AiSnapshot(AiUsage& out);
+void StartAiSampler();
+void StopAiSampler();
+void RequestAiRefresh();
+
 }  // namespace metrics

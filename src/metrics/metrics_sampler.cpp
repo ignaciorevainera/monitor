@@ -5,6 +5,7 @@
 #include <pdhmsg.h>
 #include <dxgi.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
@@ -435,6 +436,14 @@ bool TakeSnapshot(Snapshot& out) {
     ReadGpuTemp(out);
     ReadDisk(out);
     ReadDiskSpace(out);
+    AiUsage ai{};
+    if (AiSnapshot(ai)) {
+        out.ai = ai;
+        out.ok[static_cast<int>(Id::OpenCodeUsage)] = ai.ok;
+        out.val[static_cast<int>(Id::OpenCodeUsage)] = ai.ok
+            ? std::max({ ai.meter[0].percent, ai.meter[1].percent, ai.meter[2].percent })
+            : 0.0;
+    }
     return true;
 }
 
@@ -464,6 +473,7 @@ unsigned long __stdcall MetricsWorker(void*) {
     g_quit.store(false, std::memory_order_release);
     if (!g_wake) g_wake = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     EnsureInit();
+    StartAiSampler();
     for (;;) {
         if (g_quit.load(std::memory_order_acquire)) break;
         if (!g_paused.load(std::memory_order_acquire)) {
@@ -479,6 +489,7 @@ unsigned long __stdcall MetricsWorker(void*) {
             Sleep(g_interval.load(std::memory_order_acquire));
         }
     }
+    StopAiSampler();
     if (g_q && p_PdhCloseQuery) {
         p_PdhCloseQuery(g_q);
         g_q = nullptr;
