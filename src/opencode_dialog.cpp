@@ -1,9 +1,11 @@
 #include "opencode_dialog.h"
 #include "i18n.h"
+#include "metrics/opencode_usage.h"
 
 #include <shellapi.h>
 
 #include <algorithm>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -26,14 +28,21 @@ void SetControlFont(HWND control) {
     if (control) SendMessageW(control, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
 }
 
+void ZeroWString(std::wstring& s) {
+    if (!s.empty()) {
+        SecureZeroMemory(&s[0], s.size() * sizeof(wchar_t));
+        s.clear();
+    }
+}
+
 std::wstring TrimWhitespace(const wchar_t* text) {
     if (!text) return L"";
-    std::wstring s(text);
+    const std::wstring_view s(text);
     const wchar_t* ws = L" \t\r\n";
     size_t start = s.find_first_not_of(ws);
-    if (start == std::wstring::npos) return L"";
+    if (start == std::wstring_view::npos) return L"";
     size_t end = s.find_last_not_of(ws);
-    return s.substr(start, end - start + 1);
+    return std::wstring(s.substr(start, end - start + 1));  // no lingering copy of the key
 }
 
 LRESULT CALLBACK DialogProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -94,7 +103,14 @@ LRESULT CALLBACK DialogProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                     SetFocus(state->edit);
                     return 0;
                 }
+                if (!metrics::IsValidOpenCodeToken(trimmed)) {
+                    ZeroWString(trimmed);
+                    MessageBoxW(hwnd, T(L"Invalid API key"), T(L"OpenCode"), MB_OK | MB_ICONINFORMATION);
+                    SetFocus(state->edit);
+                    return 0;
+                }
                 state->result = std::move(trimmed);
+                ZeroWString(trimmed);  // a moved-from SSO buffer can still hold the key
                 state->accepted = true;
                 DestroyWindow(hwnd);
                 return 0;
@@ -164,6 +180,10 @@ bool PromptOpenCodeKey(HWND owner, std::wstring& key) {
     }
     if (IsWindow(dialog)) DestroyWindow(dialog);
     if (ownerEnabled) EnableWindow(owner, TRUE);
-    if (state.accepted) key = std::move(state.result);
+    if (state.accepted) {
+        key = std::move(state.result);
+    } else {
+        ZeroWString(state.result);  // a rejected key must not linger in memory
+    }
     return state.accepted;
 }

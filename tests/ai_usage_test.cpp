@@ -42,6 +42,27 @@ int main() {
     assert(FormatAiReset("2026-11-21T15:00:00.000Z") == L"2026-11-21 15:00 UTC");
     assert(FormatAiReset("") == L"");
     assert(FormatAiReset("basura") == L"");
+    assert(FormatAiReset("2026-11-21T15:00:00+00:00") == L"");  // only a trailing-Z ISO is accepted
+
+    const std::string withNull =
+        R"({"usage":{"rolling":null,)"
+        R"("weekly":{"status":"ok","percent":10,"resetsAt":"2026-11-23T00:00:00.000Z"},)"
+        R"("monthly":{"status":"ok","percent":20,"resetsAt":"2026-12-01T00:00:00.000Z"}}})";
+    AiUsage nulled{};
+    assert(!ParseAiUsage(withNull, nulled));
+    assert(nulled.error == AiError::Parse);
+
+    const std::string overPercent =
+        R"({"usage":{"rolling":{"status":"ok","percent":101,"resetsAt":""},)"
+        R"("weekly":{"status":"ok","percent":10,"resetsAt":""},)"
+        R"("monthly":{"status":"ok","percent":20,"resetsAt":""}}})";
+    AiUsage over{};
+    assert(!ParseAiUsage(overPercent, over));
+
+    AiUsage limited{};
+    limited.ok = true;
+    limited.meter[1] = { 10, true, "" };  // rate-limited below every threshold still reads critical
+    assert(AiSeverity(limited) == 2);
 
     std::puts("ai_usage_test: all passed");
     return 0;

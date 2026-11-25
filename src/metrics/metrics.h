@@ -51,5 +51,6 @@ bool AiSnapshot(AiUsage& out);
 void StartAiSampler();
 void StopAiSampler();
 void RequestAiRefresh();
+void ClearAiUsage();
 
 }  // namespace metrics

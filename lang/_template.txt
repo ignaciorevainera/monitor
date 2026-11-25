@@ -271,3 +271,4 @@ Invalid API key =
 This key has no OpenCode Go subscription = 
 Could not read OpenCode usage = 
 Could not reach OpenCode = 
+OpenCode is rate limiting requests = 

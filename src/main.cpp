@@ -915,6 +915,7 @@ const wchar_t* AiErrorReason(metrics::AiError err) {
         case metrics::AiError::NoToken:      return L"No API key set";
         case metrics::AiError::Unauthorized: return L"Invalid API key";
         case metrics::AiError::Forbidden:    return L"This key has no OpenCode Go subscription";
+        case metrics::AiError::RateLimited:  return L"OpenCode is rate limiting requests";
         case metrics::AiError::Parse:        return L"Could not read OpenCode usage";
         default:                             return L"Could not reach OpenCode";
     }
@@ -939,7 +940,9 @@ std::wstring AiTip(const metrics::AiUsage& ai) {
 
 std::wstring AiTrayTip(const metrics::AiUsage& ai) {
     if (!ai.ok) {
-        return std::wstring(T(L"OpenCode usage")) + L": " + T(AiErrorReason(ai.error));
+        std::wstring tip = std::wstring(T(L"OpenCode usage")) + L": " + T(AiErrorReason(ai.error));
+        if (tip.size() > 120) tip.resize(120);  // szTip is WCHAR[128]: clamp every branch
+        return tip;
     }
     std::wstring tip = T(L"OpenCode usage") + std::wstring(L" ") + metrics::FormatAiUsage(ai);
     const wchar_t* tag[3] = { L"5h", L"W", L"M" };
@@ -1763,6 +1766,7 @@ void ShowMenu() {
         }
         case ID_OPENCODE_CLEAR:
             ClearOpenCodeToken();
+            metrics::ClearAiUsage();  // the sleeping worker must not resurrect the old value
             g_metricSnap.ai = metrics::AiUsage{};
             g_metricSnap.ok[static_cast<int>(metrics::Id::OpenCodeUsage)] = false;
             UpdateWidget();

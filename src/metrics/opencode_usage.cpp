@@ -20,11 +20,12 @@ SRWLOCK g_aiLock = SRWLOCK_INIT;
 AiUsage g_aiCache{};
 HANDLE g_aiWake = nullptr;
 HANDLE g_aiThread = nullptr;
+std::atomic<HINTERNET> g_aiActiveRequest{ nullptr };
 
 bool IsValidToken(const std::wstring& token) {
     if (token.empty()) return false;
     for (wchar_t c : token) {
-        if (c <= 0x20 || c == 0x7f) return false;
+        if (c <= 0x20 || c >= 0x7f) return false;
     }
     return true;
 }
@@ -127,6 +128,7 @@ bool FetchOpenCodeUsage(const std::wstring& token, AiUsage& out) {
 
     DWORD redirect = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
     bool configured = req && WinHttpSetOption(req, WINHTTP_OPTION_REDIRECT_POLICY, &redirect, sizeof(redirect));
+    if (req) g_aiActiveRequest.store(req, std::memory_order_release);  // abortable from StopAiSampler
 
     bool sent = configured &&
                 !g_aiStop.load(std::memory_order_acquire) &&
@@ -167,7 +169,7 @@ bool FetchOpenCodeUsage(const std::wstring& token, AiUsage& out) {
         } else if (status == 403) {
             out.error = AiError::Forbidden;
         } else if (status == 429) {
-            out.error = AiError::Network;
+            out.error = AiError::RateLimited;
         } else {
             out.error = AiError::Network;
         }
@@ -175,6 +177,7 @@ bool FetchOpenCodeUsage(const std::wstring& token, AiUsage& out) {
         out.error = AiError::Network;
     }
 
+    g_aiActiveRequest.store(nullptr, std::memory_order_release);
     if (req) WinHttpCloseHandle(req);
     if (connection) WinHttpCloseHandle(connection);
     WinHttpCloseHandle(session);
@@ -188,6 +191,10 @@ bool AiSnapshot(AiUsage& out) {
     return true;
 }
 
+bool IsValidOpenCodeToken(const std::wstring& token) {
+    return IsValidToken(token);
+}
+
 void StartAiSampler() {
     if (g_aiThread) return;
     g_aiStop.store(false, std::memory_order_release);
@@ -197,16 +204,28 @@ void StartAiSampler() {
 
 void StopAiSampler() {
     g_aiStop.store(true, std::memory_order_release);
+    // Aborting the in-flight request makes every blocking WinHTTP call in the worker return at
+    // once, so an INFINITE join still finishes well inside the 5 s WM_DESTROY allows.
+    HINTERNET inflight = g_aiActiveRequest.exchange(nullptr, std::memory_order_acq_rel);
+    if (inflight) WinHttpCloseHandle(inflight);
     if (g_aiWake) SetEvent(g_aiWake);
     if (g_aiThread) {
-        WaitForSingleObject(g_aiThread, 4000);
+        WaitForSingleObject(g_aiThread, INFINITE);
         CloseHandle(g_aiThread);
         g_aiThread = nullptr;
     }
+    // Only the worker touches g_aiWake besides this point; after the join it is safe to close.
     if (g_aiWake) {
         CloseHandle(g_aiWake);
         g_aiWake = nullptr;
     }
+}
+
+void ClearAiUsage() {
+    g_aiHalted.store(false, std::memory_order_release);
+    AcquireSRWLockExclusive(&g_aiLock);
+    g_aiCache = AiUsage{};
+    ReleaseSRWLockExclusive(&g_aiLock);
 }
 
 void RequestAiRefresh() {

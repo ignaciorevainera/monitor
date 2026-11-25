@@ -5,7 +5,7 @@
 
 namespace metrics {
 
-enum class AiError : uint8_t { None = 0, NoToken, Unauthorized, Forbidden, Network, Parse };
+enum class AiError : uint8_t { None = 0, NoToken, Unauthorized, Forbidden, Network, RateLimited, Parse };
 
 struct AiMeter {
     int percent = -1;
