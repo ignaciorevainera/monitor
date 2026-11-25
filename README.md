@@ -23,6 +23,8 @@ Monitor combines wireless peripheral battery tracking with real-time system tele
   - **Disk space** (free GB / free % / used %; reads the Windows system drive and refreshes every 60 s)
   - **OpenCode Go usage** (5-hour / weekly / monthly; hidden by default until you set a personal API key from `https://opencode.ai/console/api`, stored encrypted with Windows DPAPI for your user account, and refreshed every 5 minutes; keys without an OpenCode Go subscription return 403, and Monitor never reads OpenCode's local session or Gemini)
 
+OpenCode Go usage uses the official OpenCode logo, shown only for that metric.
+
 Each metric can be placed on the **Taskbar**, in the **Notification area**, or **Hidden** via **System metrics** in the menu. You can also group temperatures with their usage metric, pick component label styles (**Icon**, **Word**, or **Both**), adjust refresh rate (1 s / 2 s / 5 s), and toggle **Temperature alerts** (on by default; rising-edge only, silent if a sensor is already hot at startup).
 
 ## Installation

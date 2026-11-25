@@ -59,11 +59,11 @@ HICON CreateSquareIcon(bool lightTaskbar, int size);  // caller DestroyIcon()
 - `lightTaskbar == true` selects the dark-ink files.
 - Consumes: nothing.
 
-- [ ] **Step 1: Copy the official assets**
+- [x] **Step 1: Copy the official assets**
 
 Copy the four PNGs listed above from `C:\Users\Ignacio Revainera\Downloads\OpenCode Brand Assets\Logo Transparent\` and download the two square files from the URLs in Global Constraints into `third_party/opencode/`. Do not edit their pixels.
 
-- [ ] **Step 2: Write the generator**
+- [x] **Step 2: Write the generator**
 
 `scripts/make-opencode-icon.ps1` reads the six PNGs with `System.Drawing`, resizes with `HighQualityBicubic` onto transparent canvases at exactly these sizes, and writes `src/opencode_icon_data.cpp`:
 
@@ -85,7 +85,7 @@ Each pixel is `0xAARRGGBB` with straight alpha (`A = PNG alpha`). `light`/`dark`
 Run: `powershell -File scripts\make-opencode-icon.ps1`
 Expected: `src/opencode_icon_data.cpp` written; compiling it has no warnings.
 
-- [ ] **Step 3: Write the failing test**
+- [x] **Step 3: Write the failing test**
 
 `tests/opencode_icon_test.cpp`:
 ```cpp
@@ -111,12 +111,12 @@ int main() {
 }
 ```
 
-- [ ] **Step 4: Run it to verify it fails**
+- [x] **Step 4: Run it to verify it fails**
 
 Run: `make test-opencode-icon`
 Expected: FAIL — `opencode_icon.h` / functions do not exist yet.
 
-- [ ] **Step 5: Implement the API**
+- [x] **Step 5: Implement the API**
 
 `src/opencode_icon.cpp`: nearest-size lookup (ties pick the larger), return a static empty sprite only if no data exists. `CreateSquareIcon` creates a 32-bit top-down DIB, copies the sprite, builds a 1-bit AND mask of zeros, and returns `CreateIconIndirect`.
 
@@ -132,7 +132,7 @@ test-opencode-icon:
 ```
 and register it in `test:` and `.PHONY`.
 
-- [ ] **Step 6: Run test and commit**
+- [x] **Step 6: Run test and commit**
 
 Run: `make test-opencode-icon`
 Expected: `opencode_icon_test: all passed`
@@ -157,11 +157,11 @@ git commit -m "feat: official OpenCode logo sprites and icon helper"
 - Consumes: `opencode_icon::Strip`, `opencode_icon::Sprite`.
 - Produces: `WidgetItem::openCodeLogo` (bool); no other public API.
 
-- [ ] **Step 1: Add the item flag**
+- [x] **Step 1: Add the item flag**
 
 In `WidgetItem` add `bool openCodeLogo = false;`. In `UpdateWidget`, set `it.openCodeLogo = m.id == metrics::Id::OpenCodeUsage;` for every path that creates that metric item (single-row and grouped-temp paths).
 
-- [ ] **Step 2: Add the sprite draw path**
+- [x] **Step 2: Add the sprite draw path**
 
 In `widget.cpp`:
 - `#include "opencode_icon.h"`.
@@ -171,14 +171,14 @@ In `widget.cpp`:
 - Do not draw the tiny `it.label` caption when `sprite != nullptr` (brand: no words beside the logo).
 - In the draw loop, branch: `if (p.sprite) cv.Draw(*p.sprite, xs[i], ys[i], p.alpha); else cv.Draw(p.m, ...)`. Width, centering, gaps and overflow measurement keep using `p.m.w/p.m.h`.
 
-- [ ] **Step 3: Build and look**
+- [x] **Step 3: Build and look**
 
 Run: `build.bat 1.1.6 dev`
 Expected: `Built Monitor.exe`, no warnings.
 
 Install locally, capture the strip with a dark taskbar and a light taskbar, and at 100 %/150 % DPI if available. Expect the official two-tone logo, correct ink per theme, no halo/box, aligned with the percentage, and no caption over it. Switch Component label to Word/Both: the label mode must fall back to the Segoe glyph (no logo + word).
 
-- [ ] **Step 4: Run the suite and commit**
+- [x] **Step 4: Run the suite and commit**
 
 Run: `make test`
 Expected: all targets pass.
@@ -200,19 +200,19 @@ git commit -m "feat: OpenCode logo in the taskbar strip"
 - Consumes: `opencode_icon::CreateSquareIcon`, `opencode_icon::Square`.
 - Produces: cached `HICON g_openCodeTrayIcon` / `g_openCodeBalloonIcon` (file-static in `main.cpp`).
 
-- [ ] **Step 1: Tray icon**
+- [x] **Step 1: Tray icon**
 
 In `ApplyMetricTray`, for `Id::OpenCodeUsage` replace the `RenderIcon` call with a cached square HICON at `GetSystemMetricsForDpi(SM_CXSMICON, dpi)` (nearest generated square). Key the cache by theme and size; destroy it in `RedrawAll` and when the theme changes. Keep the tray tooltip (`AiTrayTip`) and the single UID unchanged.
 
-- [ ] **Step 2: Alert balloon**
+- [x] **Step 2: Alert balloon**
 
 In `ShowMetricAlert`, when `id == Id::OpenCodeUsage`, pass a cached `CreateSquareIcon(light, GetSystemMetrics(SM_CXICON))` as `balloonIcon` (and as the transient tray header icon), so the OpenCode alert shows the logo. All other metrics keep `ComponentGlyph`. Destroy the cache in `RedrawAll`.
 
-- [ ] **Step 3: Dialog icon**
+- [x] **Step 3: Dialog icon**
 
 In `PromptOpenCodeKey`, after creating the dialog, set `WM_SETICON` `ICON_SMALL` (16 px square) and `ICON_BIG` (32 px square) from `opencode_icon::CreateSquareIcon`; destroy both after the message loop. The title text stays `T(L"OpenCode")`.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run: `build.bat 1.1.6 dev`, then:
 - Tray mode with OpenCode visible: square logo, sharp at 100 % and 125/150 %.
@@ -237,15 +237,15 @@ git commit -m "feat: OpenCode logo on tray, alerts and key dialog"
 **Interfaces:**
 - Consumes: everything above.
 
-- [ ] **Step 1: Notices**
+- [x] **Step 1: Notices**
 
 Add an OpenCode section: copyright Anomaly, trademark note ("OpenCode and the OpenCode logo are trademarks of Anomaly; used only to identify the OpenCode Go usage metric; no endorsement implied"), source links, that files are unmodified, and the generator path. Do not add license text not supplied by the brand kit.
 
-- [ ] **Step 2: README**
+- [x] **Step 2: README**
 
 Add one sentence under the metrics list: "OpenCode Go usage uses the official OpenCode logo, shown only for that metric." Optionally include the official "Works with OpenCode" badge using the supplied 20 px PNG, linked to https://opencode.ai, without altering it.
 
-- [ ] **Step 3: Full verification**
+- [x] **Step 3: Full verification**
 
 Run:
 ```powershell
@@ -255,7 +255,7 @@ powershell -File installer\build-installer.ps1 -Version 1.1.6
 ```
 Expected: all tests pass, installer and portable built, SHA256SUMS written. Install, restart, confirm logo survives restart, no stale Segoe glyph, no regression in other metrics/alerts.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add installer/THIRD_PARTY_NOTICES.txt README.md
