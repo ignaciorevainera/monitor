@@ -12,7 +12,7 @@ Wireless device battery levels and system metrics right on the Windows taskbar.
 Monitor combines wireless peripheral battery tracking with real-time system telemetry in a single native C++/Win32 app:
 
 - **Wireless device batteries:** mice, keyboards, headsets, game controllers, earbuds (Galaxy Buds, AirPods/Beats, Nothing/CMF, Google Fast Pair), Bluetooth devices, Phone Link phones, and [HeadsetControl](https://github.com/Sapd/HeadsetControl) headsets. Supports taskbar widget mode, tray-icon mode, brand colors, per-device low-battery alerts, custom device names, and local 30-day battery history.
-- **Seven system metrics:**
+- **Eight system metrics:**
   - **CPU usage** (`%`)
   - **CPU temperature** (`°C`)
   - **RAM usage** (`%`)
@@ -20,6 +20,7 @@ Monitor combines wireless peripheral battery tracking with real-time system tele
   - **GPU temperature** (`°C`)
   - **VRAM** (`%`)
   - **SSD temperature** (`°C`)
+  - **Disk space** (free GB / free % / used %; reads the Windows system drive and refreshes every 60 s)
 
 Each metric can be placed on the **Taskbar**, in the **Notification area**, or **Hidden** via **System metrics** in the menu. You can also group temperatures with their usage metric, pick component label styles (**Icon**, **Word**, or **Both**), adjust refresh rate (1 s / 2 s / 5 s), and toggle **Temperature alerts** (on by default; rising-edge only, silent if a sensor is already hot at startup).
 

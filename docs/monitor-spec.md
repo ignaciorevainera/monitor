@@ -47,7 +47,7 @@ Una sola app nativa, sin admin, que muestra en la taskbar: métricas del sistema
 `WidgetItem` (`src/widget.h:29`) ya existe; se **extiende**, no se crea:
 
 ```
-enum class MetricId { CpuUsage, CpuTemp, RamUsage, GpuUsage, GpuTemp, Vram, SsdTemp };  // orden de TraySense
+enum class MetricId { CpuUsage, CpuTemp, RamUsage, GpuUsage, GpuTemp, Vram, SsdTemp, DiskSpace };  // orden de TraySense + disco
 struct WidgetItem {
     // ...campos existentes (baterías)...
     MetricId metric;                     // item de métrica cuando kind == Other y metric != -1
@@ -139,7 +139,7 @@ Release de GitHub (sin firma): `Monitor-Setup-x.y.z.exe` + portable zip; README 
 **Aceptación:** un amigo instala desde la release y todo funciona con defaults sensatos.
 
 ### Etapa 6 — Futuro (backlog corto)
-Opciones de orden y gap en menú (D7); renombrado interno + migración de datos (identidad heredada, D3); `MetricProvider` para métricas nuevas (red/energía/uptime); historial genérico reusando `battery_history`; activación del updater (clave nueva + CHANNEL stable + `build.yml:33` + `sign-release.ps1`); Authenticode si se justifica.
+Opciones de orden y gap en menú (D7); selector de unidad para `DiskSpace`; renombrado interno + migración de datos (identidad heredada, D3); `MetricProvider` para métricas nuevas (red/energía/uptime); historial genérico reusando `battery_history`; activación del updater (clave nueva + CHANNEL stable + `build.yml:33` + `sign-release.ps1`); Authenticode si se justifica.
 
 ## Riesgos y rollback
 

@@ -367,7 +367,7 @@ git commit -m "feat: disk space widget, tray icon and display mode menu"
 - Consumes: todas las frases nuevas de Task 3.
 - Produces: traducciones y documentación.
 
-- [ ] **Step 1: Agregar frases**
+- [x] **Step 1: Agregar frases**
 
 En `_template.txt` (inglés, dejando el valor vacío como el resto):
 
@@ -391,11 +391,11 @@ Used space (%) = Espacio usado (%)
 {name}: {free} free of {total} ({percent}) = {name}: {free} libres de {total} ({percent})
 ```
 
-- [ ] **Step 2: README y spec**
+- [x] **Step 2: README y spec**
 
 README: agregar “Disk space (free GB / free % / used %)” a la lista de métricas y una línea sobre que usa la unidad de Windows y se refresca cada 60 s. Spec: agregar `DiskSpace` a la lista de `MetricId` y anotar “selector de unidad” como backlog.
 
-- [ ] **Step 3: Verificación final**
+- [x] **Step 3: Verificación final**
 
 Run:
 
@@ -406,7 +406,7 @@ bash -lc "make test"
 
 Expected: todos los targets verdes. Después `build.bat` y una ejecución de 5 minutos con el widget visible: sin crash, sin warnings nuevos, valor coherente con Explorer.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add lang/_template.txt lang/es.txt README.md docs/monitor-spec.md
