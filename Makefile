@@ -7,7 +7,7 @@ CHANNEL  ?= dev
 CXXFLAGS ?= -std=c++17 -Os -Wall -Wno-missing-field-initializers -ffunction-sections -fdata-sections \
             -D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00
 LDFLAGS  ?= -municode -mwindows -static -s -Wl,--gc-sections
-LIBS     := -lhid -lsetupapi -lcfgmgr32 -lole32 -loleaut32 -lcomctl32 -lgdi32 -lruntimeobject -lws2_32 -lwinhttp -lbcrypt -lversion -lbluetoothapis
+LIBS     := -lhid -lsetupapi -lcfgmgr32 -lole32 -loleaut32 -lcomctl32 -lgdi32 -lruntimeobject -lws2_32 -lwinhttp -lbcrypt -lcrypt32 -lversion -lbluetoothapis
 
 SRC := $(filter-out src/temp_helper.cpp,$(wildcard src/*.cpp)) $(wildcard src/drivers/*.cpp) $(wildcard src/metrics/*.cpp)
 OBJ := $(patsubst src/%.cpp,build/%.o,$(SRC)) build/app_res.o
@@ -39,7 +39,7 @@ build/app_res.o: res/app.rc res/app.manifest res/app.ico res/app_light.ico build
 clean:
 	rm -rf build Monitor.exe Monitor.TempHelper.exe
 
-test: test-update-core test-update-win test-update-signature test-metrics test-ai-usage test-overflow test-temp-file test-temp-alerts test-usage-alerts
+test: test-update-core test-update-win test-update-signature test-metrics test-ai-usage test-opencode-token test-overflow test-temp-file test-temp-alerts test-usage-alerts
 	@mkdir -p build
 	$(CXX) -std=c++17 -O2 -Wall tests/device_aliases_test.cpp -o build/device_aliases_test.exe
 	./build/device_aliases_test.exe
@@ -148,6 +148,11 @@ test-ai-usage:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra tests/ai_usage_test.cpp src/metrics/ai_usage.cpp -o build/ai_usage_test.exe
 	./build/ai_usage_test.exe
 
+test-opencode-token:
+	@mkdir -p build
+	$(CXX) -std=c++17 -O2 -Wall -Wextra tests/opencode_token_test.cpp src/metrics/opencode_token.cpp -o build/opencode_token_test.exe -lcrypt32
+	./build/opencode_token_test.exe
+
 test-overflow:
 	@mkdir -p build
 	$(CXX) -std=c++17 -O2 -Wall -Wextra tests/overflow_test.cpp -o build/overflow_test.exe
@@ -168,4 +173,4 @@ test-usage-alerts:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra tests/usage_alerts_test.cpp -o build/usage_alerts_test.exe
 	./build/usage_alerts_test.exe
 
-.PHONY: all clean test test-update-core test-update-win test-update-signature test-metrics test-ai-usage test-overflow test-temp-file test-temp-alerts test-usage-alerts FORCE
+.PHONY: all clean test test-update-core test-update-win test-update-signature test-metrics test-ai-usage test-opencode-token test-overflow test-temp-file test-temp-alerts test-usage-alerts FORCE
