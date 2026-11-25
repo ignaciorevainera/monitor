@@ -19,6 +19,8 @@ int MaxLum(const opencode_icon::Sprite& s) {  // brand ink check: light ink is n
 
 int main() {
     using namespace opencode_icon;
+    const Sprite& s12 = Strip(false, 12);
+    assert(s12.w == 12 && s12.h == 15 && s12.pixels);
     const Sprite& s16 = Strip(false, 16);
     assert(s16.w == 16 && s16.h == 20 && s16.pixels);
     const Sprite& s32 = Strip(true, 32);

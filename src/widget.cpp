@@ -546,7 +546,8 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height,
         if (showGlyph) {
             glyphIdx = (int)out.size();
             if (it.openCodeLogo && !showWord) {
-                const opencode_icon::Sprite& sp = opencode_icon::Strip(g_light, Px(16));
+                // 12 px wide keeps the logo at the same visual weight as the other strip icons.
+                const opencode_icon::Sprite& sp = opencode_icon::Strip(g_light, Px(12));
                 Piece icon;
                 icon.m.w = sp.w;
                 icon.m.h = sp.h;

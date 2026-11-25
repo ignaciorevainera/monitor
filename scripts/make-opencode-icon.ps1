@@ -76,8 +76,10 @@ $sb = New-Object System.Text.StringBuilder
 [void]$sb.AppendLine('struct Raw { int w, h; const uint32_t* px; };')
 [void]$sb.AppendLine()
 
-$stripW = @(16, 20, 24, 32, 48)
-$stripH = @(20, 25, 30, 40, 60)
+# shortcut: 12x15 is below the brand's 16x20 minimum, added at the user's request so the strip
+# logo matches the visual weight of the other 16 px icons. Remove 12/15 if strict compliance is needed.
+$stripW = @(12, 16, 20, 24, 32, 48)
+$stripH = @(15, 20, 25, 30, 40, 60)
 $sq = @(16, 20, 24, 32, 40, 48)
 
 Append-SpriteSet $sb (Join-Path $AssetDir 'opencode-logo-transparent-light.png') 'kPxStripLight' 'kStripLight' $stripW $stripH
