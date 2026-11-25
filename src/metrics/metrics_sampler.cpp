@@ -354,6 +354,33 @@ void ReadDisk(Snapshot& out) {
     }
 }
 
+void ReadDiskSpace(Snapshot& out) {
+    static ULONGLONG next = 0;
+    static bool cachedOk = false;
+    static double freeGb = 0.0, totalGb = 0.0, freePct = 0.0;
+
+    const ULONGLONG now = GetTickCount64();
+    if (now >= next) {
+        next = now + 60 * 1000;
+        wchar_t win[MAX_PATH]{};
+        wchar_t root[4] = { L'C', L':', L'\\', 0 };
+        if (GetWindowsDirectoryW(win, MAX_PATH) >= 2) root[0] = win[0];
+
+        ULARGE_INTEGER avail{}, total{}, totalFree{};
+        cachedOk = GetDiskFreeSpaceExW(root, &avail, &total, &totalFree) != 0 && total.QuadPart > 0;
+        if (cachedOk) {
+            freeGb = static_cast<double>(avail.QuadPart) / (1024.0 * 1024.0 * 1024.0);
+            totalGb = static_cast<double>(total.QuadPart) / (1024.0 * 1024.0 * 1024.0);
+            freePct = 100.0 * static_cast<double>(avail.QuadPart) / static_cast<double>(total.QuadPart);
+        }
+    }
+    if (!cachedOk) return;
+    out.diskFreeGb = freeGb;
+    out.diskTotalGb = totalGb;
+    out.val[static_cast<int>(Id::DiskSpace)] = freePct;
+    out.ok[static_cast<int>(Id::DiskSpace)] = true;
+}
+
 void BuildQuery() {
     if (g_q) {
         p_PdhCloseQuery(g_q);
@@ -407,6 +434,7 @@ bool TakeSnapshot(Snapshot& out) {
     ReadCpuTemp(out, pdhOk);
     ReadGpuTemp(out);
     ReadDisk(out);
+    ReadDiskSpace(out);
     return true;
 }
 

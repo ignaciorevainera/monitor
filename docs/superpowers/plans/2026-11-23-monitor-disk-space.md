@@ -162,7 +162,7 @@ git commit -m "feat: disk space metric model (pure, tested)"
 - Consumes: `Id::DiskSpace`, `Snapshot::diskFreeGb`, `Snapshot::diskTotalGb` (Task 1).
 - Produces: `TakeSnapshot` llena `val[DiskSpace]` (porcentaje libre), `diskFreeGb`, `diskTotalGb`, `ok[DiskSpace]`; sin API pública nueva.
 
-- [ ] **Step 1: Implementar `ReadDiskSpace`**
+- [x] **Step 1: Implementar `ReadDiskSpace`**
 
 Agregar junto a `ReadDisk` (que ya existe para la temperatura SSD; no renombrar esa):
 
@@ -197,14 +197,14 @@ void ReadDiskSpace(Snapshot& out) {
 
 Llamarla en `TakeSnapshot` después de `ReadDisk(out)`.
 
-- [ ] **Step 2: Compilar y verificar a mano**
+- [x] **Step 2: Compilar y verificar a mano**
 
 Run: `build.bat` (o `make`)
 Expected: `Built Monitor.exe`.
 
 Abrir el Administrador de archivos en la unidad del sistema y comparar “espacio disponible” con el tooltip del widget: diferencia ≤ 0.1 GB. Con el widget oculto, el valor no debe romper nada.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/metrics/metrics_sampler.cpp
