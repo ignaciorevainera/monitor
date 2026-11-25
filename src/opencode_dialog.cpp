@@ -160,8 +160,8 @@ bool PromptOpenCodeKey(HWND owner, std::wstring& key) {
                                   x, y, width, height, owner, nullptr, inst, &state);
     if (!dialog) return false;
 
-    HICON smallIcon = opencode_icon::CreateSquareIcon(true, 16);
-    HICON bigIcon = opencode_icon::CreateSquareIcon(true, 32);
+    HICON smallIcon = opencode_icon::CreateSquareIcon(true, GetSystemMetricsForDpi(SM_CXSMICON, dpi));
+    HICON bigIcon = opencode_icon::CreateSquareIcon(true, GetSystemMetricsForDpi(SM_CXICON, dpi));
     if (smallIcon) SendMessageW(dialog, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(smallIcon));
     if (bigIcon) SendMessageW(dialog, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(bigIcon));
 

@@ -52,13 +52,13 @@ const Sprite& PickNearest(const std::vector<Sprite>& list, int want) {
 const Sprite& Strip(bool lightTaskbar, int want) {
     static const std::vector<Sprite> light = MakeSprites(opencode_icon_data::kStripLight, opencode_icon_data::kStripLightCount);
     static const std::vector<Sprite> dark = MakeSprites(opencode_icon_data::kStripDark, opencode_icon_data::kStripDarkCount);
-    return PickNearest(lightTaskbar ? dark : light, want);
+    return PickNearest(lightTaskbar ? light : dark, want);
 }
 
 const Sprite& Square(bool lightTaskbar, int want) {
     static const std::vector<Sprite> light = MakeSprites(opencode_icon_data::kSquareLight, opencode_icon_data::kSquareLightCount);
     static const std::vector<Sprite> dark = MakeSprites(opencode_icon_data::kSquareDark, opencode_icon_data::kSquareDarkCount);
-    return PickNearest(lightTaskbar ? dark : light, want);
+    return PickNearest(lightTaskbar ? light : dark, want);
 }
 
 HICON CreateSquareIcon(bool lightTaskbar, int size) {

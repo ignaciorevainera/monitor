@@ -767,6 +767,8 @@ void ShowMetricAlert(int id, const std::wstring& title, const std::wstring& form
     HICON header = AppIcon();
     if (!header) g_placeholderIcon = g_placeholderIcon ? g_placeholderIcon : RenderIcon(L"-", -1, Foreground(), Foreground(), true);
     HICON balloonIcon = nullptr;
+    // No alert source calls this for OpenCodeUsage yet; the logo path stays wired for when
+    // usage alerts grow an OpenCode entry, so the balloon icon needs no second change then.
     if (id == static_cast<int>(metrics::Id::OpenCodeUsage)) {
         const int size = GetSystemMetrics(SM_CXICON);
         if (!g_openCodeBalloonIcon || g_openCodeBalloonLight != g_lightTaskbar || g_openCodeBalloonSize != size) {

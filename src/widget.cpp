@@ -759,7 +759,7 @@ bool SameItems(const std::vector<WidgetItem>& a, const std::vector<WidgetItem>& 
             x.accent != y.accent || x.metric != y.metric || x.glyphOverride != y.glyphOverride ||
             x.name != y.name || x.severity != y.severity ||
             x.inlineTempText != y.inlineTempText || x.inlineTempSeverity != y.inlineTempSeverity ||
-            x.word != y.word || x.labelStyle != y.labelStyle)
+            x.word != y.word || x.labelStyle != y.labelStyle || x.openCodeLogo != y.openCodeLogo)
             return false;
     }
     return true;
