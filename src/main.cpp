@@ -1105,6 +1105,7 @@ void UpdateWidget() {
             }
             WidgetItem it;
             it.metric = idx;
+            it.openCodeLogo = isAi;
             it.glyphOverride = componentGlyph;
             it.name = T(m.name);
             it.text = valText;
@@ -1120,6 +1121,7 @@ void UpdateWidget() {
         }
         WidgetItem it;
         it.metric = idx;
+        it.openCodeLogo = isAi;
         it.glyphOverride = m.glyph;
         it.name = T(m.name);
         it.text = valText;

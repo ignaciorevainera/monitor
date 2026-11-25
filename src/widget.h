@@ -27,6 +27,7 @@ struct WidgetItem {
     int inlineTempSeverity = 0;
     std::wstring word;
     int labelStyle = 0;
+    bool openCodeLogo = false;
 };
 
 namespace widget {

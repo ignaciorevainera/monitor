@@ -2,6 +2,7 @@
 
 #include "i18n.h"
 #include "metrics/overflow.h"
+#include "opencode_icon.h"
 
 #include <commctrl.h>
 #include <uiautomation.h>
@@ -428,6 +429,17 @@ struct Canvas {
         for (int j = 0; j < m.h; j++)
             for (int i = 0; i < m.w; i++) Blend(x + i, y + j, c, m.a[j * m.w + i] * alpha / 255);
     }
+    void Draw(const opencode_icon::Sprite& s, int x, int y, int alpha) {
+        if (!s.pixels) return;
+        for (int j = 0; j < s.h; j++) {
+            for (int i = 0; i < s.w; i++) {
+                uint32_t p = s.pixels[j * s.w + i];
+                int a = ((p >> 24) & 255) * alpha / 255;
+                Rgb c{ (int)((p >> 16) & 255), (int)((p >> 8) & 255), (int)(p & 255) };
+                Blend(x + i, y + j, c, a);
+            }
+        }
+    }
 };
 
 // Soft glow around a glyph, like a lit RGB device: the coverage mask padded by r pixels, box-blurred
@@ -474,6 +486,7 @@ struct Piece {
     Mask halo;        // glow drawn behind the glyph (branded devices)
     int haloR = 0, haloAlpha = 0;
     int px = INT_MIN, py = 0;  // fixed top-left position (stacked and vertical layouts); INT_MIN = flow left to right
+    const opencode_icon::Sprite* sprite = nullptr;
 };
 
 // Three arrangements of the same pieces:
@@ -532,14 +545,26 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height,
         int iw = 0;
         if (showGlyph) {
             glyphIdx = (int)out.size();
-            Piece icon{ RenderMask(std::wstring(1, Glyph(it.kind, it.bluetooth, it.glyphOverride)), icons, g_light), branded ? accent : fg, a, Px(5) };
-            if (branded && !it.dim) {
-                icon.haloR = Px(3);
-                icon.halo = Halo(icon.m, icon.haloR);
-                icon.haloAlpha = g_light ? 60 : 140;
+            if (it.openCodeLogo && !showWord) {
+                const opencode_icon::Sprite& sp = opencode_icon::Strip(g_light, Px(16));
+                Piece icon;
+                icon.m.w = sp.w;
+                icon.m.h = sp.h;
+                icon.sprite = &sp;
+                icon.alpha = a;
+                icon.gapAfter = Px(5);
+                iw += icon.m.w + icon.gapAfter;
+                out.push_back(std::move(icon));
+            } else {
+                Piece icon{ RenderMask(std::wstring(1, Glyph(it.kind, it.bluetooth, it.glyphOverride)), icons, g_light), branded ? accent : fg, a, Px(5) };
+                if (branded && !it.dim) {
+                    icon.haloR = Px(3);
+                    icon.halo = Halo(icon.m, icon.haloR);
+                    icon.haloAlpha = g_light ? 60 : 140;
+                }
+                iw += icon.m.w + icon.gapAfter;
+                out.push_back(std::move(icon));
             }
-            iw += icon.m.w + icon.gapAfter;
-            out.push_back(std::move(icon));
         }
         int wordIdx = -1;
         if (showWord) {
@@ -576,7 +601,7 @@ std::vector<Piece> Layout(int barW, int barH, int& width, int& height,
         int gap = i < lastVisible ? itemGap : 0;
         out.back().gapAfter = gap;
         if (itemWidths) (*itemWidths)[i] = iw;
-        if (showGlyph && phase <= metrics::Phase::S1_NoWords && !it.label.empty()) {  // tiny caption in the bottom-right corner of the icon
+        if (showGlyph && phase <= metrics::Phase::S1_NoWords && !it.label.empty() && !out[glyphIdx].sprite) {  // tiny caption in the bottom-right corner of the icon
             Piece c{ RenderMask(it.label, caption, g_light), fg, a, 0 };
             c.anchor = glyphIdx;
             c.bx = out[glyphIdx].m.w - c.m.w + Px(3);
@@ -893,7 +918,8 @@ void PaintStrip(HWND wnd, HWND taskbar, SIZE& size, int maxW, float hoverT) {
                 for (int ox = -1; ox <= 1; ox++)
                     if (ox || oy) cv.Draw(p.m, xs[i] + ox, ys[i] + oy, barColor, 255);
         }
-        cv.Draw(p.m, xs[i], ys[i], p.color, p.alpha);
+        if (p.sprite) cv.Draw(*p.sprite, xs[i], ys[i], p.alpha);
+        else cv.Draw(p.m, xs[i], ys[i], p.color, p.alpha);
     }
 
     HDC screen = GetDC(nullptr);
