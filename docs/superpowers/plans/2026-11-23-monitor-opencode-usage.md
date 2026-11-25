@@ -74,7 +74,7 @@ int AiSeverity(const AiUsage& ai);                      // 0/1/2
 ```
 - Consumes: nada nuevo.
 
-- [ ] **Step 1: Escribir el test rojo**
+- [x] **Step 1: Escribir el test rojo**
 
 Crear `tests/ai_usage_test.cpp`:
 
@@ -149,7 +149,7 @@ b1.ai.meter[0].percent = 61;
 assert(!SameValues(a1, b1));
 ```
 
-- [ ] **Step 2: Correr y ver fallar**
+- [x] **Step 2: Correr y ver fallar**
 
 Run: `make test-ai-usage` (después de agregar el target) o compilar a mano:
 
@@ -159,7 +159,7 @@ g++ -std=c++17 -O2 -Wall -Wextra tests/ai_usage_test.cpp src/metrics/ai_usage.cp
 
 Expected: falla por `ai_usage.h` inexistente.
 
-- [ ] **Step 3: Implementar el modelo**
+- [x] **Step 3: Implementar el modelo**
 
 `ai_usage.h` exactamente con las firmas del bloque Interfaces, más `<cstdint>` y `<string>`.
 
@@ -183,7 +183,7 @@ struct Snapshot { /* ...campos de disco... */ AiUsage ai; };
 
 `ParseConfig` ya acepta un prefijo de 7..`kCount` bytes por el plan de disco; no cambiar esa lógica.
 
-- [ ] **Step 4: Correr tests**
+- [x] **Step 4: Correr tests**
 
 Agregar el target al `Makefile` (y a `test:` / `.PHONY`):
 
@@ -198,7 +198,7 @@ test-ai-usage:
 Run: `make test-ai-usage test-metrics`
 Expected: `ai_usage_test: all passed` y `metrics_test: all passed`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/metrics/ai_usage.h src/metrics/ai_usage.cpp src/metrics/metrics.h \
@@ -229,7 +229,7 @@ void ClearOpenCodeToken();
 ```
 - Consumes: nada.
 
-- [ ] **Step 1: Test rojo**
+- [x] **Step 1: Test rojo**
 
 Crear `tests/opencode_token_test.cpp`:
 
@@ -263,7 +263,7 @@ int main() {
 }
 ```
 
-- [ ] **Step 2: Correr y ver fallar**
+- [x] **Step 2: Correr y ver fallar**
 
 Run:
 
@@ -273,7 +273,7 @@ g++ -std=c++17 -O2 -Wall -Wextra tests/opencode_token_test.cpp src/metrics/openc
 
 Expected: falla por header/funciones inexistentes.
 
-- [ ] **Step 3: Implementar**
+- [x] **Step 3: Implementar**
 
 `opencode_token.cpp`:
 ```cpp
@@ -295,7 +295,7 @@ bool ProtectToken(const std::wstring& token, std::vector<BYTE>& out) {
 
 Agregar `#include <dpapi.h>` y `<vector>`. En `Makefile`, `LIBS` suma `-lcrypt32`; en `build.bat`, la línea de link suma `-lcrypt32`. El test es sólo in-memory (no toca HKCU). Riesgo CI: `CryptProtectData` en windows-latest no está verificado; si falla en Actions, aislar `test-opencode-token` en un smoke local y sacarlo de `test:` con un comentario que explique por qué.
 
-- [ ] **Step 4: Suite verde**
+- [x] **Step 4: Suite verde**
 
 Agregar target:
 
@@ -310,7 +310,7 @@ test-opencode-token:
 Registrarlo en `test:` y `.PHONY`. Run: `make test-opencode-token`
 Expected: `opencode_token_test: all passed`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/metrics/opencode_token.h src/metrics/opencode_token.cpp tests/opencode_token_test.cpp \
@@ -341,7 +341,7 @@ void RequestAiRefresh();              // menú: reanuda tras 401/403 y fuerza fe
 }
 ```
 
-- [ ] **Step 1: Implementar el fetch**
+- [x] **Step 1: Implementar el fetch**
 
 `opencode_usage.h`:
 ```cpp
@@ -360,7 +360,7 @@ namespace metrics { bool FetchOpenCodeUsage(const std::wstring& token, AiUsage& 
 - Status: 200 → leer hasta 16 KB verificando fin de respuesta (patrón de `src/update_win.cpp:146-154`) y `ParseAiUsage`; 401 → `Unauthorized`; 403 → `Forbidden`; 429 → `Network` con mensaje propio de "rate limited"; otro/0 → `Network`. En cualquier fallo `out.ok = false`.
 - Cerrar todos los handles en el orden inverso, en todos los caminos.
 
-- [ ] **Step 2: Hilo propio con caché**
+- [x] **Step 2: Hilo propio con caché**
 
 En `opencode_usage.cpp`, además del fetch:
 - Estado: `std::atomic<bool> g_aiStop`, `std::atomic<bool> g_aiHalted` (401/403), `SRWLOCK g_aiLock`, `AiUsage g_aiCache`, `HANDLE g_aiWake`, handle del hilo creado por `StartAiSampler` (idempotente).
@@ -370,7 +370,7 @@ En `opencode_usage.cpp`, además del fetch:
 - `RequestAiRefresh()`: `g_aiHalted = false; SetEvent(g_aiWake);`.
 - `StopAiSampler()`: `g_aiStop = true; SetEvent(g_aiWake);` join. El fetch en curso termina solo dentro de sus timeouts; `WM_DESTROY` nunca espera más de sus 5 s (`src/main.cpp:1844`).
 
-- [ ] **Step 3: Integrar en `TakeSnapshot`**
+- [x] **Step 3: Integrar en `TakeSnapshot`**
 
 En `metrics_sampler.cpp`, al final de `TakeSnapshot`:
 ```cpp
@@ -385,14 +385,14 @@ if (metrics::AiSnapshot(ai)) {
 ```
 `StartAiSampler()` junto al arranque del worker de métricas y `StopAiSampler()` junto a su join. `--metrics-dump` no dispara fetch: sólo la caché (sin key no imprime nada nuevo).
 
-- [ ] **Step 4: Verificar sin key y con red**
+- [x] **Step 4: Verificar sin key y con red**
 
 Run: `build.bat`
 Expected: `Built Monitor.exe`.
 
 Sin key: `--` en el widget (si está visible), tooltip “No API key set”, sin demora perceptible. Con una key inválida: tooltip “Invalid API key” y **no más polls hasta cambiar la key**. Con red desconectada: tooltip “Could not reach OpenCode” y CPU/RAM siguen actualizando en cada tick (el fetch nunca corre en el hilo del sampler). Salir de la app durante un fetch: el proceso termina en < 5 s.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/metrics/opencode_usage.h src/metrics/opencode_usage.cpp \
@@ -415,7 +415,7 @@ git commit -m "feat: OpenCode Go usage fetch on its own cancellable thread"
 - Consumes: `SaveOpenCodeToken`, `ClearOpenCodeToken`, `HasOpenCodeToken` (Task 2); `AiUsage`, `FormatAiUsage`, `AiSeverity`, `RequestAiRefresh` (Tasks 1/3).
 - Produces: `bool PromptOpenCodeKey(HWND owner, std::wstring& key);`, `AiTip(const metrics::AiUsage&)` (widget, detalle completo), `AiTrayTip(const metrics::AiUsage&)` (bandeja, ≤ 120 chars), `AiTrayPercent(const metrics::AiUsage&)`.
 
-- [ ] **Step 1: Diálogo**
+- [x] **Step 1: Diálogo**
 
 `opencode_dialog.h`:
 ```cpp
@@ -433,7 +433,7 @@ bool PromptOpenCodeKey(HWND owner, std::wstring& key);
 - `Cancel` (IDCANCEL).
 - `WM_CLOSE` destruye sin aceptar.
 
-- [ ] **Step 2: Métricas y tooltip**
+- [x] **Step 2: Métricas y tooltip**
 
 En `kMetrics`, después de disco:
 ```cpp
@@ -499,7 +499,7 @@ En `ApplyMetricTray`, para OpenCode (usa `g_metricSnap`, no `snap`):
 - `tip = AiTrayTip(g_metricSnap.ai)` (≤ 120 chars: `szTip` es `WCHAR[128]`; el detalle completo va sólo en el tooltip del widget).
 - Sigue siendo **un solo** icono de bandeja con el uID existente `kTrayUidBase + id`.
 
-- [ ] **Step 3: Menú y comandos**
+- [x] **Step 3: Menú y comandos**
 
 IDs nuevos:
 ```cpp
@@ -545,7 +545,7 @@ El submenú de ubicación por métrica ya incluye “OpenCode usage” por recor
 
 Mientras `PromptOpenCodeKey` esté abierto, `ShowMenu()` debe ignorar nuevos clics del widget (guard estático, p.ej. `g_dialogOpen`): el widget cuelga de la taskbar, no de `g_hwnd`, y un clic durante el modal reabriría el menú encima del diálogo.
 
-- [ ] **Step 4: i18n**
+- [x] **Step 4: i18n**
 
 Agregar a `_template.txt`:
 ```text
@@ -599,7 +599,7 @@ Expected: `Built Monitor.exe`.
 6. Desconectar red: `--` y “No se pudo conectar con OpenCode”; CPU/RAM siguen actualizando.
 7. `make test` verde.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/opencode_dialog.h src/opencode_dialog.cpp src/main.cpp lang/_template.txt lang/es.txt
@@ -619,13 +619,13 @@ git commit -m "feat: OpenCode usage widget, key dialog and menu"
 - Consumes: feature completa.
 - Produces: documentación y verificación final.
 
-- [ ] **Step 1: Documentar**
+- [x] **Step 1: Documentar**
 
 README: agregar “OpenCode Go usage (5-hour / weekly / monthly)” a la lista de métricas; explicar que requiere una API key personal de `https://opencode.ai/console/api`, que se guarda cifrada con DPAPI para el usuario de Windows, que se refresca cada 5 minutos y que sin suscripción Go la API responde 403. Aclarar que no lee la sesión de OpenCode ni Gemini.
 
 Spec: agregar `OpenCodeUsage` a la lista de `MetricId`, `AiUsage` al `Snapshot`, y anotar en backlog el logo PNG y Gemini (sin endpoint oficial).
 
-- [ ] **Step 2: Verificación final**
+- [x] **Step 2: Verificación final**
 
 Run:
 
@@ -636,7 +636,7 @@ bash -lc "make test"
 
 Expected: todos los targets verdes, incluidos `test-metrics`, `test-ai-usage` y `test-opencode-token`. Después `build.bat` y una ejecución de 10 minutos con una key real: el valor se refresca a los 5 minutos, el resto de métricas no se congela y no aparecen warnings nuevos.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add README.md docs/monitor-spec.md docs/releasing.md

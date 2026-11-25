@@ -47,7 +47,7 @@ Una sola app nativa, sin admin, que muestra en la taskbar: métricas del sistema
 `WidgetItem` (`src/widget.h:29`) ya existe; se **extiende**, no se crea:
 
 ```
-enum class MetricId { CpuUsage, CpuTemp, RamUsage, GpuUsage, GpuTemp, Vram, SsdTemp, DiskSpace };  // orden de TraySense + disco
+enum class MetricId { CpuUsage, CpuTemp, RamUsage, GpuUsage, GpuTemp, Vram, SsdTemp, DiskSpace, OpenCodeUsage };  // orden de TraySense + disco + OpenCode Go
 struct WidgetItem {
     // ...campos existentes (baterías)...
     MetricId metric;                     // item de métrica cuando kind == Other y metric != -1
@@ -65,7 +65,7 @@ El strip se repinta solo si cambió algún valor visible (patrón firma de `main
 
 `src/metrics/` (solo Windows; se agrega a los wildcards de `Makefile:12` y `build.bat:16`, **no** a `build-linux.sh`):
 
-- `metrics.h` — enum, `MetricsSnapshot { double val[8]; bool ok[8]; }` con `diskFreeGb`/`diskTotalGb`, funciones puras de formato/severidad/umbrales (testeables).
+- `metrics.h` — enum, `Snapshot { double val[9]; bool ok[9]; }` con `diskFreeGb`/`diskTotalGb` y `AiUsage ai`, funciones puras de formato/severidad/umbrales (testeables).
 - `metrics_sampler.cpp` — hilo propio, 5 s default, `PostMessage` del snapshot a la ventana principal. Prioridad `THREAD_PRIORITY_BELOW_NORMAL`. Pausa cuando la pantalla está apagada: `RegisterPowerSettingNotification(g_hwnd, GUID_CONSOLE_DISPLAY_STATE)` extendiendo el `WM_POWERBROADCAST` existente (`src/main.cpp:1081-1083`).
 - `metrics_sources.cpp` — lecturas portadas verbatim de `traysense.c`: CPU % `GetSystemTimes` (206-217), RAM % `GlobalMemoryStatusEx` (219-227), GPU % PDH `\GPU Engine(*)\Utilization Percentage` + VRAM `\GPU Adapter Memory(*)\Dedicated Usage` con `PdhAddEnglishCounterW` (578-590), GPU temp KMT `D3DKMTQueryAdapterInfo` tipo 62 + fallback NVML `nvml.dll` (348-366), CPU temp PDH `\Thermal Zone Information(*)\Temperature` con Kelvin→°C (260-269, 584-585), SSD temp IOCTL `StorageDeviceTemperatureProperty` sobre `\\.\PhysicalDriveN` access-0 (541-576).
 
@@ -139,7 +139,7 @@ Release de GitHub (sin firma): `Monitor-Setup-x.y.z.exe` + portable zip; README 
 **Aceptación:** un amigo instala desde la release y todo funciona con defaults sensatos.
 
 ### Etapa 6 — Futuro (backlog corto)
-Opciones de orden y gap en menú (D7); selector de unidad para `DiskSpace`; renombrado interno + migración de datos (identidad heredada, D3); `MetricProvider` para métricas nuevas (red/energía/uptime); historial genérico reusando `battery_history`; activación del updater (clave nueva + CHANNEL stable + `build.yml:33` + `sign-release.ps1`); Authenticode si se justifica.
+Opciones de orden y gap en menú (D7); selector de unidad para `DiskSpace`; logo PNG para OpenCode y soporte Gemini (cuando exista endpoint oficial); renombrado interno + migración de datos (identidad heredada, D3); `MetricProvider` para métricas nuevas (red/energía/uptime); historial genérico reusando `battery_history`; activación del updater (clave nueva + CHANNEL stable + `build.yml:33` + `sign-release.ps1`); Authenticode si se justifica.
 
 ## Riesgos y rollback
 
