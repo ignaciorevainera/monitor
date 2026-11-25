@@ -19,6 +19,10 @@ int main() {
     assert(a.meter[1].percent == 100 && a.meter[1].limited);
     assert(a.meter[2].percent == 50 && !a.meter[2].limited);
     assert(FormatAiUsage(a) == L"30/100/50");
+    assert(FormatAiUsage(a, AiDisplay::All) == L"30/100/50");
+    assert(FormatAiUsage(a, AiDisplay::MonthlyOnly) == L"50%");
+    assert(AiPercent(a, AiDisplay::All) == 100);
+    assert(AiPercent(a, AiDisplay::MonthlyOnly) == 50);
     assert(AiSeverity(a) == 2);
 
     AiUsage warn = a;
@@ -37,6 +41,9 @@ int main() {
     assert(bad.error == AiError::Parse);
     assert(!bad.ok);
     assert(FormatAiUsage(bad) == L"--");
+    assert(FormatAiUsage(bad, AiDisplay::MonthlyOnly) == L"--");
+    assert(AiPercent(bad, AiDisplay::All) == -1);
+    assert(AiPercent(bad, AiDisplay::MonthlyOnly) == -1);
     assert(AiSeverity(bad) == 0);
 
     assert(FormatAiReset("2026-11-21T15:00:00.000Z") == L"2026-11-21 15:00 UTC");

@@ -19,8 +19,12 @@ struct AiUsage {
     AiError error = AiError::NoToken;
 };
 
+enum class AiDisplay : uint8_t { All = 0, MonthlyOnly = 1 };
+
 bool ParseAiUsage(const std::string& json, AiUsage& out);
-std::wstring FormatAiUsage(const AiUsage& ai);
+std::wstring FormatAiUsage(const AiUsage& ai);  // all three periods
+std::wstring FormatAiUsage(const AiUsage& ai, AiDisplay display);
+int AiPercent(const AiUsage& ai, AiDisplay display);  // worst period, or monthly
 std::wstring FormatAiReset(const std::string& iso);
 int AiSeverity(const AiUsage& ai);
 

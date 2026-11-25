@@ -67,6 +67,7 @@ enum MenuId : UINT {
     ID_TEMP_THRESH_FIRST = 160,   // "Temperature alerts at": 160..162 (70/75/80 C)
     ID_DISK_MODE_FIRST = 163,     // 163..165: FreeGb / FreePercent / UsedPercent
     ID_OPENCODE_KEY = 166, ID_OPENCODE_CLEAR, ID_OPENCODE_GET,
+    ID_OPENCODE_DISPLAY_ALL = 169, ID_OPENCODE_DISPLAY_MONTHLY, ID_OPENCODE_COLORS,
     ID_POLL_FIRST = 500,  // "Check battery every": ID_POLL_FIRST + 0..7
     ID_METRIC_INTERVAL_FIRST = 600,  // "Refresh rate": ID_METRIC_INTERVAL_FIRST + 0..2
     ID_METRIC_WHERE_FIRST = 700,     // per-metric location: ID_METRIC_WHERE_FIRST + id * 4 + where
@@ -94,6 +95,8 @@ constexpr int USAGE_THRESHOLDS[] = { 85, 90, 95 };
 constexpr int TEMP_THRESHOLDS[] = { 70, 75, 80 };
 DWORD g_metricIntervalMs = 5000;
 metrics::DiskDisplay g_diskDisplay = metrics::DiskDisplay::FreeGb;
+metrics::AiDisplay g_openCodeDisplay = metrics::AiDisplay::All;
+bool g_openCodeColors = true;
 metrics::Config g_metricCfg = metrics::kDefaultConfig;
 metrics::Snapshot g_metricSnap{};
 bool g_hasMetricSnap = false;
@@ -402,6 +405,24 @@ int LoadMetricLabelStyle() {
 void SaveMetricLabelStyle(int style) {
     DWORD v = static_cast<DWORD>(style);
     RegSetKeyValueW(HKEY_CURRENT_USER, kSettingsKey, L"MetricLabelStyle", REG_DWORD, &v, sizeof(v));
+}
+metrics::AiDisplay LoadOpenCodeDisplay() {
+    DWORD v = 0, sz = sizeof(v);
+    RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, L"OpenCodeDisplay", RRF_RT_REG_DWORD, nullptr, &v, &sz);
+    return v == 1 ? metrics::AiDisplay::MonthlyOnly : metrics::AiDisplay::All;
+}
+void SaveOpenCodeDisplay(metrics::AiDisplay mode) {
+    DWORD v = static_cast<DWORD>(mode);
+    RegSetKeyValueW(HKEY_CURRENT_USER, kSettingsKey, L"OpenCodeDisplay", REG_DWORD, &v, sizeof(v));
+}
+bool LoadOpenCodeColors() {  // colors are on unless the user turned them off
+    DWORD v = 1, sz = sizeof(v);
+    RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, L"OpenCodeColors", RRF_RT_REG_DWORD, nullptr, &v, &sz);
+    return v != 0;
+}
+void SaveOpenCodeColors(bool on) {
+    DWORD v = on ? 1 : 0;
+    RegSetKeyValueW(HKEY_CURRENT_USER, kSettingsKey, L"OpenCodeColors", REG_DWORD, &v, sizeof(v));
 }
 metrics::DiskDisplay LoadDiskDisplay() {
     DWORD v = 0, sz = sizeof(v);
@@ -926,10 +947,6 @@ std::wstring DiskTip(const metrics::Snapshot& s) {
                 { L"percent", metrics::FormatPercent(s.val[static_cast<int>(metrics::Id::DiskSpace)], ok) } });
 }
 
-int AiTrayPercent(const metrics::AiUsage& ai) {
-    return std::max({ ai.meter[0].percent, ai.meter[1].percent, ai.meter[2].percent });
-}
-
 const wchar_t* AiErrorReason(metrics::AiError err) {
     switch (err) {
         case metrics::AiError::NoToken:      return L"No API key set";
@@ -996,10 +1013,10 @@ void ApplyMetricTray(int id) {
                   id == static_cast<int>(metrics::Id::GpuTemp) ||
                   id == static_cast<int>(metrics::Id::SsdTemp);
     int sev = !ok ? 0
-                  : isAi ? metrics::AiSeverity(g_metricSnap.ai)
+                  : isAi ? (g_openCodeColors ? metrics::AiSeverity(g_metricSnap.ai) : 0)
                   : isDisk ? metrics::DiskSeverity(g_metricSnap.val[id])
                   : isTemp ? metrics::SeverityFor(id, g_metricSnap.val[id]) : 0;
-    int val = ok ? (isAi ? std::clamp(AiTrayPercent(g_metricSnap.ai), 0, 100)
+    int val = ok ? (isAi ? std::clamp(metrics::AiPercent(g_metricSnap.ai, g_openCodeDisplay), 0, 100)
                          : isDisk ? std::clamp(static_cast<int>(std::lround(100.0 - g_metricSnap.val[id])), 0, 100)
                          : isTemp ? static_cast<int>(std::lround(g_metricSnap.val[id]))
                                   : std::clamp(static_cast<int>(g_metricSnap.val[id] + 0.5), 0, 100))
@@ -1101,11 +1118,11 @@ void UpdateWidget() {
         bool isDisk = m.id == metrics::Id::DiskSpace;
         bool isAi = m.id == metrics::Id::OpenCodeUsage;
         bool isTemp = m.id == metrics::Id::CpuTemp || m.id == metrics::Id::GpuTemp || m.id == metrics::Id::SsdTemp;
-        std::wstring valText = isAi ? metrics::FormatAiUsage(g_metricSnap.ai)
+        std::wstring valText = isAi ? metrics::FormatAiUsage(g_metricSnap.ai, g_openCodeDisplay)
                             : isDisk ? DiskText(g_metricSnap, g_diskDisplay, ok)
                             : isTemp ? metrics::FormatTemp(g_metricSnap.val[idx], ok)
                                      : metrics::FormatPercent(g_metricSnap.val[idx], ok);
-        int sev = isAi ? metrics::AiSeverity(g_metricSnap.ai)
+        int sev = isAi ? (g_openCodeColors ? metrics::AiSeverity(g_metricSnap.ai) : 0)
                 : !ok ? 0 : isDisk ? metrics::DiskSeverity(g_metricSnap.val[idx])
                 : isTemp ? metrics::SeverityFor(idx, g_metricSnap.val[idx]) : 0;
         if (!tip.empty()) tip += L"\n";
@@ -1676,6 +1693,16 @@ void ShowMenu() {
         AppendMenuW(oc, MF_STRING, ID_OPENCODE_KEY, T(L"Set API key..."));
         AppendMenuW(oc, MF_STRING | (HasOpenCodeToken() ? 0 : MF_GRAYED), ID_OPENCODE_CLEAR, T(L"Clear API key"));
         AppendMenuW(oc, MF_STRING, ID_OPENCODE_GET, T(L"Get an API key..."));
+        AppendMenuW(oc, MF_SEPARATOR, 0, nullptr);
+        HMENU disp = CreatePopupMenu();
+        AppendMenuW(disp, MF_STRING, ID_OPENCODE_DISPLAY_ALL, T(L"All periods"));
+        AppendMenuW(disp, MF_STRING, ID_OPENCODE_DISPLAY_MONTHLY, T(L"Monthly only"));
+        CheckMenuRadioItem(disp, ID_OPENCODE_DISPLAY_ALL, ID_OPENCODE_DISPLAY_MONTHLY,
+                           g_openCodeDisplay == metrics::AiDisplay::MonthlyOnly ? ID_OPENCODE_DISPLAY_MONTHLY
+                                                                                : ID_OPENCODE_DISPLAY_ALL,
+                           MF_BYCOMMAND);
+        AppendMenuW(oc, MF_POPUP, (UINT_PTR)disp, T(L"OpenCode shows"));
+        AppendMenuW(oc, MF_STRING | (g_openCodeColors ? MF_CHECKED : 0), ID_OPENCODE_COLORS, T(L"Color by usage"));
         AppendMenuW(mm, MF_POPUP, (UINT_PTR)oc, T(L"OpenCode"));
         if (!g_metricSnap.ok[static_cast<int>(metrics::Id::CpuTemp)]) {
             static pawnio::PioState pioState = pawnio::PioState::Failed;
@@ -1812,6 +1839,20 @@ void ShowMenu() {
             metrics::ClearAiUsage();  // the sleeping worker must not resurrect the old value
             g_metricSnap.ai = metrics::AiUsage{};
             g_metricSnap.ok[static_cast<int>(metrics::Id::OpenCodeUsage)] = false;
+            UpdateWidget();
+            ApplyAllMetricTray();
+            break;
+        case ID_OPENCODE_DISPLAY_ALL:
+        case ID_OPENCODE_DISPLAY_MONTHLY:
+            g_openCodeDisplay = cmd == ID_OPENCODE_DISPLAY_MONTHLY ? metrics::AiDisplay::MonthlyOnly
+                                                                   : metrics::AiDisplay::All;
+            SaveOpenCodeDisplay(g_openCodeDisplay);
+            UpdateWidget();
+            ApplyAllMetricTray();
+            break;
+        case ID_OPENCODE_COLORS:
+            g_openCodeColors = !g_openCodeColors;
+            SaveOpenCodeColors(g_openCodeColors);
             UpdateWidget();
             ApplyAllMetricTray();
             break;
@@ -2260,6 +2301,8 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR cmdLine, int) {
     LoadMetricsWhere();
     g_metricIntervalMs = LoadMetricIntervalMs();
     g_diskDisplay = LoadDiskDisplay();
+    g_openCodeDisplay = LoadOpenCodeDisplay();
+    g_openCodeColors = LoadOpenCodeColors();
     widget::SetStacked(g_stacked);
     widget::SetBackground(g_widgetBackground);  // remembered by the widget across re-creation
     i18n::Init();

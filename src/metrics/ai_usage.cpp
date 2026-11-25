@@ -1,5 +1,6 @@
 #include "ai_usage.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstring>
 
@@ -155,10 +156,21 @@ bool ParseAiUsage(const std::string& json, AiUsage& out) {
 }
 
 std::wstring FormatAiUsage(const AiUsage& ai) {
+    return FormatAiUsage(ai, AiDisplay::All);
+}
+
+std::wstring FormatAiUsage(const AiUsage& ai, AiDisplay display) {
     if (!ai.ok) return L"--";
+    if (display == AiDisplay::MonthlyOnly) return std::to_wstring(ai.meter[2].percent) + L"%";
     return std::to_wstring(ai.meter[0].percent) + L"/" +
            std::to_wstring(ai.meter[1].percent) + L"/" +
            std::to_wstring(ai.meter[2].percent);
+}
+
+int AiPercent(const AiUsage& ai, AiDisplay display) {
+    if (!ai.ok) return -1;
+    if (display == AiDisplay::MonthlyOnly) return ai.meter[2].percent;
+    return std::max({ ai.meter[0].percent, ai.meter[1].percent, ai.meter[2].percent });
 }
 
 std::wstring FormatAiReset(const std::string& iso) {
