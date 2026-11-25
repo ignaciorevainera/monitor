@@ -76,7 +76,14 @@ bool ParseConfig(const uint8_t* data, size_t bytes, Config& out) {
 bool SameValues(const Snapshot& a, const Snapshot& b) {
     for (int i = 0; i < kCount; i++) {
         if (a.ok[i] != b.ok[i]) return false;
-        if (a.ok[i] && a.val[i] != b.val[i]) return false;
+        if (!a.ok[i]) continue;
+        if (static_cast<Id>(i) == Id::DiskSpace) {
+            // A few KB on a big drive moves the raw percent but nothing the UI shows (whole % and
+            // tenth-of-GB below), so compare the rounded percent to avoid constant repaints.
+            if (std::llround(a.val[i]) != std::llround(b.val[i])) return false;
+        } else if (a.val[i] != b.val[i]) {
+            return false;
+        }
     }
     constexpr int disk = static_cast<int>(Id::DiskSpace);
     if (a.ok[disk]) {

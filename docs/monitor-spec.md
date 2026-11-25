@@ -10,7 +10,7 @@ Proyecto: **Monitor**, unión de dos apps de monitoreo de Windows:
 
 ## Objetivo
 
-Una sola app nativa, sin admin, que muestra en la taskbar: métricas del sistema (CPU %, temp, RAM %, GPU %, temp, VRAM, temp SSD) **a la izquierda** y baterías de dispositivos inalámbricos **a la derecha**, con el mismo espaciado entre todos los ítems. Uso personal + compartir con un par de amigos. Repo público propio `ignaciorevainera/monitor`, historial git del fork conservado (remote `upstream` para drivers futuros).
+Una sola app nativa, sin admin, que muestra en la taskbar: métricas del sistema (CPU %, temp, RAM %, GPU %, temp, VRAM, temp SSD, espacio libre en disco) **a la izquierda** y baterías de dispositivos inalámbricos **a la derecha**, con el mismo espaciado entre todos los ítems. Uso personal + compartir con un par de amigos. Repo público propio `ignaciorevainera/monitor`, historial git del fork conservado (remote `upstream` para drivers futuros).
 
 ## No-objetivos
 
@@ -65,7 +65,7 @@ El strip se repinta solo si cambió algún valor visible (patrón firma de `main
 
 `src/metrics/` (solo Windows; se agrega a los wildcards de `Makefile:12` y `build.bat:16`, **no** a `build-linux.sh`):
 
-- `metrics.h` — enum, `MetricsSnapshot { double val[7]; bool ok[7]; }`, funciones puras de formato/severidad/umbrales (testeables).
+- `metrics.h` — enum, `MetricsSnapshot { double val[8]; bool ok[8]; }` con `diskFreeGb`/`diskTotalGb`, funciones puras de formato/severidad/umbrales (testeables).
 - `metrics_sampler.cpp` — hilo propio, 5 s default, `PostMessage` del snapshot a la ventana principal. Prioridad `THREAD_PRIORITY_BELOW_NORMAL`. Pausa cuando la pantalla está apagada: `RegisterPowerSettingNotification(g_hwnd, GUID_CONSOLE_DISPLAY_STATE)` extendiendo el `WM_POWERBROADCAST` existente (`src/main.cpp:1081-1083`).
 - `metrics_sources.cpp` — lecturas portadas verbatim de `traysense.c`: CPU % `GetSystemTimes` (206-217), RAM % `GlobalMemoryStatusEx` (219-227), GPU % PDH `\GPU Engine(*)\Utilization Percentage` + VRAM `\GPU Adapter Memory(*)\Dedicated Usage` con `PdhAddEnglishCounterW` (578-590), GPU temp KMT `D3DKMTQueryAdapterInfo` tipo 62 + fallback NVML `nvml.dll` (348-366), CPU temp PDH `\Thermal Zone Information(*)\Temperature` con Kelvin→°C (260-269, 584-585), SSD temp IOCTL `StorageDeviceTemperatureProperty` sobre `\\.\PhysicalDriveN` access-0 (541-576).
 

@@ -67,14 +67,14 @@ int main() {
 
     const uint8_t shortBuf[3] = { 0, 1, 2 };
     assert(!ParseConfig(shortBuf, sizeof(shortBuf), cfg));
-    for (int i = 0; i < 7; i++) assert(cfg.where[i] == kDefaultConfig.where[i]);
+    for (int i = 0; i < kCount; i++) assert(cfg.where[i] == kDefaultConfig.where[i]);
 
     assert(!ParseConfig(nullptr, 7, cfg));
-    for (int i = 0; i < 7; i++) assert(cfg.where[i] == kDefaultConfig.where[i]);
+    for (int i = 0; i < kCount; i++) assert(cfg.where[i] == kDefaultConfig.where[i]);
 
     const uint8_t garbage[7] = { 0, 1, 2, 3, 0, 1, 2 };
     assert(!ParseConfig(garbage, sizeof(garbage), cfg));
-    for (int i = 0; i < 7; i++) assert(cfg.where[i] == kDefaultConfig.where[i]);
+    for (int i = 0; i < kCount; i++) assert(cfg.where[i] == kDefaultConfig.where[i]);
 
     Snapshot a{};
     Snapshot b{};
@@ -87,15 +87,6 @@ int main() {
     assert(SameValues(a, b));
     b.val[0] = 26.0;
     assert(!SameValues(a, b));
-
-    // StableId always sets bit 8 (0x100), while 0x2000..0x2006 have bit 8 clear.
-    static_assert((kTrayUidBase & 0x100) == 0, "kTrayUidBase..+6 must keep bit 8 clear so it never collides with StableId");
-    assert(kTrayUidBase > 0x1000);
-    for (uint32_t id = 0; id < 7; id++) {
-        uint32_t uid = kTrayUidBase + id;
-        assert(uid != 1 && uid != 2);
-        assert(uid >= 0x2000);
-    }
 
     assert(FormatGb(62.44, true) == L"62.4 GB");
     assert(FormatGb(0.04, true) == L"0.0 GB");
@@ -131,7 +122,16 @@ int main() {
     assert(!SameValues(d1, d2));
     Snapshot d3 = d1;
     d3.diskFreeGb = d1.diskFreeGb + 0.02;
+    d3.val[static_cast<int>(Id::DiskSpace)] = 24.02;  // sub-umbral: ni el % entero ni las décimas cambian
     assert(SameValues(d1, d3));
+
+    Config cfg8{};
+    const uint8_t valid8[8] = { 0, 1, 2, 0, 1, 2, 1, 2 };
+    assert(ParseConfig(valid8, sizeof(valid8), cfg8));
+    assert(cfg8.where[static_cast<int>(Id::DiskSpace)] == Where::Hidden);
+    const uint8_t bad8[8] = { 0, 1, 2, 0, 1, 2, 1, 3 };
+    assert(!ParseConfig(bad8, sizeof(bad8), cfg8));
+    for (int i = 0; i < kCount; i++) assert(cfg8.where[i] == kDefaultConfig.where[i]);
 
     for (int i = 0; i < kCount; i++) {
         uint32_t uid = kTrayUidBase + static_cast<uint32_t>(i);
