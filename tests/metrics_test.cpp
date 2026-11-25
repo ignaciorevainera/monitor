@@ -97,6 +97,48 @@ int main() {
         assert(uid >= 0x2000);
     }
 
+    assert(FormatGb(62.44, true) == L"62.4 GB");
+    assert(FormatGb(0.04, true) == L"0.0 GB");
+    assert(FormatGb(99.96, true) == L"100.0 GB");
+    assert(FormatGb(128.0, true) == L"128 GB");
+    assert(FormatGb(1024.0, true) == L"1024 GB");
+    assert(FormatGb(-3.0, true) == L"0.0 GB");
+    assert(FormatGb(1.0, false) == L"--");
+
+    assert(DiskSeverity(20.0) == 0);
+    assert(DiskSeverity(19.9) == 1);
+    assert(DiskSeverity(10.0) == 1);
+    assert(DiskSeverity(9.9) == 2);
+    assert(DiskSeverity(0.0) == 2);
+
+    assert(kDefaultConfig.where[static_cast<int>(Id::DiskSpace)] == Where::Bar);
+
+    Config legacy{};
+    const uint8_t old7[7] = { 1, 1, 1, 1, 1, 1, 2 };
+    assert(ParseConfig(old7, sizeof(old7), legacy));
+    assert(legacy.where[0] == Where::Tray);
+    assert(legacy.where[6] == Where::Hidden);
+    assert(legacy.where[static_cast<int>(Id::DiskSpace)] == Where::Bar);
+
+    Snapshot d1{}, d2{};
+    d1.ok[static_cast<int>(Id::DiskSpace)] = true;
+    d1.val[static_cast<int>(Id::DiskSpace)] = 24.0;
+    d1.diskFreeGb = 62.4;
+    d1.diskTotalGb = 256.0;
+    d2 = d1;
+    assert(SameValues(d1, d2));
+    d2.diskFreeGb = 62.3;
+    assert(!SameValues(d1, d2));
+    Snapshot d3 = d1;
+    d3.diskFreeGb = d1.diskFreeGb + 0.02;
+    assert(SameValues(d1, d3));
+
+    for (int i = 0; i < kCount; i++) {
+        uint32_t uid = kTrayUidBase + static_cast<uint32_t>(i);
+        assert(uid != 1 && uid != 2 && uid >= 0x2000);
+        static_assert((kTrayUidBase & 0x100) == 0, "kTrayUidBase..+kCount must keep bit 8 clear");
+    }
+
     std::puts("metrics_test: all passed");
     return 0;
 }

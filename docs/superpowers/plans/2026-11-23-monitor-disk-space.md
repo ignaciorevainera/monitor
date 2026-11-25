@@ -55,7 +55,7 @@
 - Produces: `metrics::Id::DiskSpace` (valor 7), `metrics::kCount = 8`, `metrics::DiskDisplay`, `metrics::Snapshot::diskFreeGb`, `metrics::Snapshot::diskTotalGb`, `metrics::FormatGb(double, bool)`, `metrics::DiskSeverity(double)`, `metrics::ParseConfig` aceptando 7..8 bytes.
 - Consumes: nada nuevo.
 
-- [ ] **Step 1: Escribir tests rojos**
+- [x] **Step 1: Escribir tests rojos**
 
 Agregar en `tests/metrics_test.cpp`, antes del `puts` final:
 
@@ -103,12 +103,12 @@ for (int i = 0; i < kCount; i++) {
 }
 ```
 
-- [ ] **Step 2: Correr y ver fallar**
+- [x] **Step 2: Correr y ver fallar**
 
 Run: `make test-metrics`
 Expected: errores de compilación por `FormatGb`, `DiskSeverity` y `Id::DiskSpace` inexistentes.
 
-- [ ] **Step 3: Implementar el modelo**
+- [x] **Step 3: Implementar el modelo**
 
 En `metrics.h`:
 
@@ -139,12 +139,12 @@ En `metrics_format.cpp`:
 - `ParseConfig`: aceptar `bytes >= 7`; parsear `min(bytes, kCount)` posiciones; rellenar las faltantes con `kDefaultConfig`; validar solo las presentes. Menos de 7 bytes o byte inválido → defaults y `false`.
 - `SameValues`: cuando `ok[DiskSpace]`, comparar `llround(diskFreeGb * 10)` y `llround(diskTotalGb * 10)` (décimas visibles, no el double crudo); el resto como hoy.
 
-- [ ] **Step 4: Correr tests**
+- [x] **Step 4: Correr tests**
 
 Run: `make test-metrics`
 Expected: `metrics_test: all passed`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/metrics/metrics.h src/metrics/metrics_format.cpp tests/metrics_test.cpp

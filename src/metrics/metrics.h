@@ -6,14 +6,17 @@
 
 namespace metrics {
 
-enum class Id : int { CpuUsage = 0, CpuTemp, RamUsage, GpuUsage, GpuTemp, Vram, SsdTemp };
-inline constexpr int kCount = 7;
+enum class Id : int { CpuUsage = 0, CpuTemp, RamUsage, GpuUsage, GpuTemp, Vram, SsdTemp, DiskSpace };
+inline constexpr int kCount = 8;
 
 enum class Where : uint8_t { Bar = 0, Tray = 1, Hidden = 2 };
+enum class DiskDisplay : uint8_t { FreeGb = 0, FreePercent = 1, UsedPercent = 2 };
 
 struct Snapshot {
     double val[kCount]{};
     bool ok[kCount]{};
+    double diskFreeGb{};
+    double diskTotalGb{};
 };
 
 struct Config {
@@ -21,14 +24,16 @@ struct Config {
 };
 
 inline constexpr Config kDefaultConfig = { {
-    Where::Bar, Where::Bar, Where::Bar, Where::Bar, Where::Bar, Where::Bar, Where::Hidden
+    Where::Bar, Where::Bar, Where::Bar, Where::Bar, Where::Bar, Where::Bar, Where::Hidden, Where::Bar
 } };
 
 inline constexpr uint32_t kTrayUidBase = 0x2000;
 
 std::wstring FormatPercent(double v, bool ok);
 std::wstring FormatTemp(double c, bool ok);
+std::wstring FormatGb(double gb, bool ok);
 int SeverityFor(int metric, double c);
+int DiskSeverity(double freePercent);
 bool ParseConfig(const uint8_t* data, size_t bytes, Config& out);
 bool SameValues(const Snapshot& a, const Snapshot& b);
 

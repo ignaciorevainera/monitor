@@ -1,5 +1,6 @@
 #include "metrics.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <string>
@@ -18,6 +19,19 @@ std::wstring FormatTemp(double c, bool ok) {
     if (!ok) return L"--";
     int deg = static_cast<int>(std::lround(c));
     return std::to_wstring(deg) + L"\u00B0";
+}
+
+std::wstring FormatGb(double gb, bool ok) {
+    if (!ok) return L"--";
+    long long t = std::llround(std::max(0.0, gb) * 10.0);
+    if (t > 1000) return std::to_wstring(t / 10) + L" GB";
+    return std::to_wstring(t / 10) + L"." + std::to_wstring(t % 10) + L" GB";
+}
+
+int DiskSeverity(double freePercent) {
+    if (freePercent >= 20.0) return 0;
+    if (freePercent >= 10.0) return 1;
+    return 2;
 }
 
 int SeverityFor(int metric, double c) {
@@ -42,12 +56,13 @@ int SeverityFor(int metric, double c) {
 }
 
 bool ParseConfig(const uint8_t* data, size_t bytes, Config& out) {
-    if (!data || bytes < static_cast<size_t>(kCount)) {
+    if (!data || bytes < 7) {
         out = kDefaultConfig;
         return false;
     }
-    Config parsed{};
-    for (int i = 0; i < kCount; i++) {
+    Config parsed = kDefaultConfig;
+    const int n = static_cast<int>(std::min(bytes, static_cast<size_t>(kCount)));
+    for (int i = 0; i < n; i++) {
         if (data[i] > static_cast<uint8_t>(Where::Hidden)) {
             out = kDefaultConfig;
             return false;
@@ -62,6 +77,11 @@ bool SameValues(const Snapshot& a, const Snapshot& b) {
     for (int i = 0; i < kCount; i++) {
         if (a.ok[i] != b.ok[i]) return false;
         if (a.ok[i] && a.val[i] != b.val[i]) return false;
+    }
+    constexpr int disk = static_cast<int>(Id::DiskSpace);
+    if (a.ok[disk]) {
+        if (std::llround(a.diskFreeGb * 10.0) != std::llround(b.diskFreeGb * 10.0)) return false;
+        if (std::llround(a.diskTotalGb * 10.0) != std::llround(b.diskTotalGb * 10.0)) return false;
     }
     return true;
 }
