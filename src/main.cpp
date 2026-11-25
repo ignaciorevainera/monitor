@@ -27,6 +27,7 @@
 #include "report.h"
 #include "rename_dialog.h"
 #include "opencode_dialog.h"
+#include "opencode_icon.h"
 #include "widget.h"
 #include "update_win.h"
 #include "update_apply.h"
@@ -173,6 +174,12 @@ HICON g_placeholderIcon = nullptr;
 struct AlertGlyphIcon { wchar_t glyph; HICON icon; };
 std::vector<AlertGlyphIcon> g_alertIcons;  // one 32 px icon per notification glyph
 HICON g_appIcon = nullptr;  // small app icon: the notification header next to the title
+HICON g_openCodeTrayIcon = nullptr;
+bool g_openCodeTrayLight = false;
+int g_openCodeTraySize = 0;
+HICON g_openCodeBalloonIcon = nullptr;
+bool g_openCodeBalloonLight = false;
+int g_openCodeBalloonSize = 0;
 
 // User-supplied names are presentation-only, keyed by stable DeviceStatus.key.
 // Driver identity, HID polling, brand detection and device diagnostics are unchanged.
@@ -759,8 +766,19 @@ void ShowMetricAlert(int id, const std::wstring& title, const std::wstring& form
     const wchar_t glyph = ComponentGlyph(id);
     HICON header = AppIcon();
     if (!header) g_placeholderIcon = g_placeholderIcon ? g_placeholderIcon : RenderIcon(L"-", -1, Foreground(), Foreground(), true);
+    HICON balloonIcon = nullptr;
+    if (id == static_cast<int>(metrics::Id::OpenCodeUsage)) {
+        const int size = GetSystemMetrics(SM_CXICON);
+        if (!g_openCodeBalloonIcon || g_openCodeBalloonLight != g_lightTaskbar || g_openCodeBalloonSize != size) {
+            if (g_openCodeBalloonIcon) DestroyIcon(g_openCodeBalloonIcon);
+            g_openCodeBalloonIcon = opencode_icon::CreateSquareIcon(g_lightTaskbar, size);
+            g_openCodeBalloonLight = g_lightTaskbar;
+            g_openCodeBalloonSize = size;
+        }
+        balloonIcon = g_openCodeBalloonIcon;
+    }
     TrayCall(g_alertIconAdded ? NIM_MODIFY : NIM_ADD, ALERT_ICON_ID, header ? header : g_placeholderIcon,
-             L"Monitor", title.c_str(), message, glyph);
+             L"Monitor", title.c_str(), message, glyph, balloonIcon);
     g_alertIconAdded = true;
     SetTimer(g_hwnd, TIMER_ALERT_ICON, 60 * 1000, nullptr);
 }
@@ -984,6 +1002,27 @@ void ApplyMetricTray(int id) {
                          : isTemp ? static_cast<int>(std::lround(g_metricSnap.val[id]))
                                   : std::clamp(static_cast<int>(g_metricSnap.val[id] + 0.5), 0, 100))
                  : -1;
+    std::wstring tip = isAi ? AiTrayTip(g_metricSnap.ai)
+                            : isDisk ? DiskTip(g_metricSnap)
+                                     : (std::wstring(T(spec->name)) + L": " +
+                                        (isTemp ? metrics::FormatTemp(g_metricSnap.val[id], ok)
+                                                : metrics::FormatPercent(g_metricSnap.val[id], ok)));
+    if (id == static_cast<int>(metrics::Id::CpuTemp)) {
+        tip += std::wstring(L" (") + T(L"Thermal zone reading, not a CPU die sensor") + L")";
+    }
+    if (isAi) {
+        const UINT dpi = g_hwnd ? GetDpiForWindow(g_hwnd) : 0;
+        const int size = GetSystemMetricsForDpi(SM_CXSMICON, dpi ? dpi : GetDpiForSystem());
+        if (!g_openCodeTrayIcon || g_openCodeTrayLight != g_lightTaskbar || g_openCodeTraySize != size) {
+            if (g_openCodeTrayIcon) DestroyIcon(g_openCodeTrayIcon);
+            g_openCodeTrayIcon = opencode_icon::CreateSquareIcon(g_lightTaskbar, size);
+            g_openCodeTrayLight = g_lightTaskbar;
+            g_openCodeTraySize = size;
+        }
+        TrayCall(e.added ? NIM_MODIFY : NIM_ADD, uid, g_openCodeTrayIcon, tip);
+        e.added = true;
+        return;
+    }
     std::wstring sig = std::to_wstring(val) + (ok ? L"1" : L"0") + std::to_wstring(sev) + (g_lightTaskbar ? L"l" : L"k");
     if (isDisk) {
         sig += L"d" + std::to_wstring(static_cast<int>(g_diskDisplay)) + L"_" +
@@ -1001,14 +1040,6 @@ void ApplyMetricTray(int id) {
         int barPct = ok ? std::clamp(val, 0, 100) : -1;
         e.icon = RenderIcon(shortVal, barPct, tc, tc, !ok);
         e.iconSig = sig;
-    }
-    std::wstring tip = isAi ? AiTrayTip(g_metricSnap.ai)
-                            : isDisk ? DiskTip(g_metricSnap)
-                                     : (std::wstring(T(spec->name)) + L": " +
-                                        (isTemp ? metrics::FormatTemp(g_metricSnap.val[id], ok)
-                                                : metrics::FormatPercent(g_metricSnap.val[id], ok)));
-    if (id == static_cast<int>(metrics::Id::CpuTemp)) {
-        tip += std::wstring(L" (") + T(L"Thermal zone reading, not a CPU die sensor") + L")";
     }
     TrayCall(e.added ? NIM_MODIFY : NIM_ADD, uid, e.icon, tip);
     e.added = true;
@@ -1281,6 +1312,14 @@ void RedrawAll() {
     }
     for (auto& a : g_alertIcons) DestroyIcon(a.icon);
     g_alertIcons.clear();
+    if (g_openCodeTrayIcon) {
+        DestroyIcon(g_openCodeTrayIcon);
+        g_openCodeTrayIcon = nullptr;
+    }
+    if (g_openCodeBalloonIcon) {
+        DestroyIcon(g_openCodeBalloonIcon);
+        g_openCodeBalloonIcon = nullptr;
+    }
     for (auto& [k, e] : g_entries) { e.iconSig.clear(); ApplyEntry(e); }
     for (const auto& m : kMetrics) {
         int id = static_cast<int>(m.id);
@@ -2008,6 +2047,8 @@ LRESULT CALLBACK WndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
                 if (g_metricTray[id].added) TrayDelete(metrics::kTrayUidBase + static_cast<UINT>(id));
                 if (g_metricTray[id].icon) DestroyIcon(g_metricTray[id].icon);
             }
+            if (g_openCodeTrayIcon) { DestroyIcon(g_openCodeTrayIcon); g_openCodeTrayIcon = nullptr; }
+            if (g_openCodeBalloonIcon) { DestroyIcon(g_openCodeBalloonIcon); g_openCodeBalloonIcon = nullptr; }
             if (g_placeholder) TrayDelete(PLACEHOLDER_ID);
             PostQuitMessage(0);
             return 0;

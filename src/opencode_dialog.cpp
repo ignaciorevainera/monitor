@@ -1,4 +1,5 @@
 #include "opencode_dialog.h"
+#include "opencode_icon.h"
 #include "i18n.h"
 #include "metrics/opencode_usage.h"
 
@@ -159,6 +160,11 @@ bool PromptOpenCodeKey(HWND owner, std::wstring& key) {
                                   x, y, width, height, owner, nullptr, inst, &state);
     if (!dialog) return false;
 
+    HICON smallIcon = opencode_icon::CreateSquareIcon(true, 16);
+    HICON bigIcon = opencode_icon::CreateSquareIcon(true, 32);
+    if (smallIcon) SendMessageW(dialog, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(smallIcon));
+    if (bigIcon) SendMessageW(dialog, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(bigIcon));
+
     const bool ownerEnabled = owner && IsWindowEnabled(owner);
     if (ownerEnabled) EnableWindow(owner, FALSE);
     ShowWindow(dialog, SW_SHOW);
@@ -179,6 +185,8 @@ bool PromptOpenCodeKey(HWND owner, std::wstring& key) {
         }
     }
     if (IsWindow(dialog)) DestroyWindow(dialog);
+    if (smallIcon) DestroyIcon(smallIcon);
+    if (bigIcon) DestroyIcon(bigIcon);
     if (ownerEnabled) EnableWindow(owner, TRUE);
     if (state.accepted) {
         key = std::move(state.result);
