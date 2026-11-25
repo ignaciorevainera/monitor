@@ -26,10 +26,12 @@
 #include "labels.h"
 #include "report.h"
 #include "rename_dialog.h"
+#include "opencode_dialog.h"
 #include "widget.h"
 #include "update_win.h"
 #include "update_apply.h"
 #include "metrics/metrics.h"
+#include "metrics/opencode_token.h"
 #include "metrics/pawnio.h"
 #include "metrics/temp_alerts.h"
 #include "metrics/usage_alerts.h"
@@ -63,6 +65,7 @@ enum MenuId : UINT {
     ID_USAGE_THRESH_FIRST = 157,  // "Usage alerts at": 157..159 (85/90/95%)
     ID_TEMP_THRESH_FIRST = 160,   // "Temperature alerts at": 160..162 (70/75/80 C)
     ID_DISK_MODE_FIRST = 163,     // 163..165: FreeGb / FreePercent / UsedPercent
+    ID_OPENCODE_KEY = 166, ID_OPENCODE_CLEAR, ID_OPENCODE_GET,
     ID_POLL_FIRST = 500,  // "Check battery every": ID_POLL_FIRST + 0..7
     ID_METRIC_INTERVAL_FIRST = 600,  // "Refresh rate": ID_METRIC_INTERVAL_FIRST + 0..2
     ID_METRIC_WHERE_FIRST = 700,     // per-metric location: ID_METRIC_WHERE_FIRST + id * 4 + where
@@ -124,6 +127,7 @@ constexpr MetricSpec kMetrics[] = {
     { metrics::Id::Vram,     0xEEA0, L"VRAM",            L"V",    L"VRAM" },
     { metrics::Id::SsdTemp,  0xEDA2, L"SSD temperature", nullptr, L"SSD\u00B0" },
     { metrics::Id::DiskSpace, 0xE770, L"Disk space",     L"D",    L"DISK" },
+    { metrics::Id::OpenCodeUsage, 0xE943, L"OpenCode usage", L"OC", L"AI" },
 };
 
 // The component an alert belongs to, so its balloon carries that part's icon (CPU, RAM...).
@@ -138,6 +142,7 @@ wchar_t ComponentGlyph(int id) {
 UINT g_taskbarCreatedMsg;
 bool g_lightTaskbar;
 bool g_wantWidget = true;      // user's choice: taskbar widget (default) or tray icons
+bool g_dialogOpen = false;
 bool g_useWidget = false;      // what is actually shown right now
 bool g_hideLastKnown = false;  // hide (last known) / asleep devices from taskbar and tray
 bool g_showDisconnectedDevices = false;  // opt-in, explicit driver-reported offline devices only
@@ -901,6 +906,51 @@ std::wstring DiskTip(const metrics::Snapshot& s) {
                 { L"percent", metrics::FormatPercent(s.val[static_cast<int>(metrics::Id::DiskSpace)], ok) } });
 }
 
+int AiTrayPercent(const metrics::AiUsage& ai) {
+    return std::max({ ai.meter[0].percent, ai.meter[1].percent, ai.meter[2].percent });
+}
+
+const wchar_t* AiErrorReason(metrics::AiError err) {
+    switch (err) {
+        case metrics::AiError::NoToken:      return L"No API key set";
+        case metrics::AiError::Unauthorized: return L"Invalid API key";
+        case metrics::AiError::Forbidden:    return L"This key has no OpenCode Go subscription";
+        case metrics::AiError::Parse:        return L"Could not read OpenCode usage";
+        default:                             return L"Could not reach OpenCode";
+    }
+}
+
+std::wstring AiTip(const metrics::AiUsage& ai) {
+    if (!ai.ok) {
+        return std::wstring(T(L"OpenCode usage")) + L": " + T(AiErrorReason(ai.error));
+    }
+    const wchar_t* names[3] = { L"5-hour", L"Weekly", L"Monthly" };
+    std::wstring tip = T(L"OpenCode usage");
+    for (int i = 0; i < 3; i++) {
+        tip += L"\n" + std::wstring(T(names[i])) + L": " +
+               metrics::FormatPercent(ai.meter[i].percent, true);
+        const std::wstring reset = metrics::FormatAiReset(ai.meter[i].resetsAt);
+        if (!reset.empty()) {
+            tip += L" (" + TF(L"resets {time}", { { L"time", reset } }) + L")";
+        }
+    }
+    return tip;
+}
+
+std::wstring AiTrayTip(const metrics::AiUsage& ai) {
+    if (!ai.ok) {
+        return std::wstring(T(L"OpenCode usage")) + L": " + T(AiErrorReason(ai.error));
+    }
+    std::wstring tip = T(L"OpenCode usage") + std::wstring(L" ") + metrics::FormatAiUsage(ai);
+    const wchar_t* tag[3] = { L"5h", L"W", L"M" };
+    for (int i = 0; i < 3; i++) {
+        const std::wstring reset = metrics::FormatAiReset(ai.meter[i].resetsAt);
+        if (!reset.empty()) tip += std::wstring(L" \u00B7 ") + tag[i] + L" " + reset.substr(11, 5);
+    }
+    if (tip.size() > 120) tip.resize(120);
+    return tip;
+}
+
 void ApplyMetricTray(int id) {
     if (id < 0 || id >= metrics::kCount) return;
     const MetricSpec* spec = FindMetricSpec(id);
@@ -918,15 +968,18 @@ void ApplyMetricTray(int id) {
     }
     bool ok = g_hasMetricSnap && g_metricSnap.ok[id];
     const bool isDisk = id == static_cast<int>(metrics::Id::DiskSpace);
+    const bool isAi = id == static_cast<int>(metrics::Id::OpenCodeUsage);
     bool isTemp = id == static_cast<int>(metrics::Id::CpuTemp) ||
                   id == static_cast<int>(metrics::Id::GpuTemp) ||
                   id == static_cast<int>(metrics::Id::SsdTemp);
     int sev = !ok ? 0
+                  : isAi ? metrics::AiSeverity(g_metricSnap.ai)
                   : isDisk ? metrics::DiskSeverity(g_metricSnap.val[id])
                   : isTemp ? metrics::SeverityFor(id, g_metricSnap.val[id]) : 0;
-    int val = ok ? (isDisk ? std::clamp(static_cast<int>(std::lround(100.0 - g_metricSnap.val[id])), 0, 100)
-                           : isTemp ? static_cast<int>(std::lround(g_metricSnap.val[id]))
-                                    : std::clamp(static_cast<int>(g_metricSnap.val[id] + 0.5), 0, 100))
+    int val = ok ? (isAi ? std::clamp(AiTrayPercent(g_metricSnap.ai), 0, 100)
+                         : isDisk ? std::clamp(static_cast<int>(std::lround(100.0 - g_metricSnap.val[id])), 0, 100)
+                         : isTemp ? static_cast<int>(std::lround(g_metricSnap.val[id]))
+                                  : std::clamp(static_cast<int>(g_metricSnap.val[id] + 0.5), 0, 100))
                  : -1;
     std::wstring sig = std::to_wstring(val) + (ok ? L"1" : L"0") + std::to_wstring(sev) + (g_lightTaskbar ? L"l" : L"k");
     if (isDisk) {
@@ -946,10 +999,11 @@ void ApplyMetricTray(int id) {
         e.icon = RenderIcon(shortVal, barPct, tc, tc, !ok);
         e.iconSig = sig;
     }
-    std::wstring tip = isDisk ? DiskTip(g_metricSnap)
-                              : (std::wstring(T(spec->name)) + L": " +
-                                 (isTemp ? metrics::FormatTemp(g_metricSnap.val[id], ok)
-                                         : metrics::FormatPercent(g_metricSnap.val[id], ok)));
+    std::wstring tip = isAi ? AiTrayTip(g_metricSnap.ai)
+                            : isDisk ? DiskTip(g_metricSnap)
+                                     : (std::wstring(T(spec->name)) + L": " +
+                                        (isTemp ? metrics::FormatTemp(g_metricSnap.val[id], ok)
+                                                : metrics::FormatPercent(g_metricSnap.val[id], ok)));
     if (id == static_cast<int>(metrics::Id::CpuTemp)) {
         tip += std::wstring(L" (") + T(L"Thermal zone reading, not a CPU die sensor") + L")";
     }
@@ -1009,14 +1063,18 @@ void UpdateWidget() {
         if (g_metricCfg.where[idx] != metrics::Where::Bar) continue;
         bool ok = g_hasMetricSnap && g_metricSnap.ok[idx];
         bool isDisk = m.id == metrics::Id::DiskSpace;
+        bool isAi = m.id == metrics::Id::OpenCodeUsage;
         bool isTemp = m.id == metrics::Id::CpuTemp || m.id == metrics::Id::GpuTemp || m.id == metrics::Id::SsdTemp;
-        std::wstring valText = isDisk ? DiskText(g_metricSnap, g_diskDisplay, ok)
+        std::wstring valText = isAi ? metrics::FormatAiUsage(g_metricSnap.ai)
+                            : isDisk ? DiskText(g_metricSnap, g_diskDisplay, ok)
                             : isTemp ? metrics::FormatTemp(g_metricSnap.val[idx], ok)
                                      : metrics::FormatPercent(g_metricSnap.val[idx], ok);
-        int sev = !ok ? 0 : isDisk ? metrics::DiskSeverity(g_metricSnap.val[idx])
-                  : isTemp ? metrics::SeverityFor(idx, g_metricSnap.val[idx]) : 0;
+        int sev = isAi ? metrics::AiSeverity(g_metricSnap.ai)
+                : !ok ? 0 : isDisk ? metrics::DiskSeverity(g_metricSnap.val[idx])
+                : isTemp ? metrics::SeverityFor(idx, g_metricSnap.val[idx]) : 0;
         if (!tip.empty()) tip += L"\n";
-        tip += isDisk ? DiskTip(g_metricSnap) : (std::wstring(T(m.name)) + L": " + valText);
+        tip += isAi ? AiTip(g_metricSnap.ai)
+                    : isDisk ? DiskTip(g_metricSnap) : (std::wstring(T(m.name)) + L": " + valText);
         if (m.id == metrics::Id::CpuTemp) {
             tip += std::wstring(L" (") + T(L"Thermal zone reading, not a CPU die sensor") + L")";
         }
@@ -1428,6 +1486,7 @@ void ActivateCpuTemp() {
 }
 
 void ShowMenu() {
+    if (g_dialogOpen) return;
     ApplyMenuTheme(g_lightTaskbar);
     HMENU m = CreatePopupMenu();
     std::vector<std::wstring> keys;  // device index -> device key; menu id ID_DEVICE_FIRST + index * DEV_STRIDE + command
@@ -1567,6 +1626,11 @@ void ShowMenu() {
         AppendMenuW(lbl, MF_STRING, ID_LABEL_FIRST + 2, T(L"Both"));
         CheckMenuRadioItem(lbl, ID_LABEL_FIRST, ID_LABEL_FIRST + 2, ID_LABEL_FIRST + g_metricLabelStyle, MF_BYCOMMAND);
         AppendMenuW(mm, MF_POPUP, (UINT_PTR)lbl, T(L"Component label"));
+        HMENU oc = CreatePopupMenu();
+        AppendMenuW(oc, MF_STRING, ID_OPENCODE_KEY, T(L"Set API key..."));
+        AppendMenuW(oc, MF_STRING | (HasOpenCodeToken() ? 0 : MF_GRAYED), ID_OPENCODE_CLEAR, T(L"Clear API key"));
+        AppendMenuW(oc, MF_STRING, ID_OPENCODE_GET, T(L"Get an API key..."));
+        AppendMenuW(mm, MF_POPUP, (UINT_PTR)oc, T(L"OpenCode"));
         if (!g_metricSnap.ok[static_cast<int>(metrics::Id::CpuTemp)]) {
             static pawnio::PioState pioState = pawnio::PioState::Failed;
             static bool pioChecked = false;
@@ -1673,6 +1737,36 @@ void ShowMenu() {
             break;
         case ID_CPU_TEMP_ON:
             ActivateCpuTemp();
+            break;
+        case ID_OPENCODE_GET:
+            ShellExecuteW(nullptr, L"open", L"https://opencode.ai/console/api", nullptr, nullptr, SW_SHOWNORMAL);
+            break;
+        case ID_OPENCODE_KEY: {
+            std::wstring key;
+            g_dialogOpen = true;
+            bool accepted = PromptOpenCodeKey(g_hwnd, key);
+            g_dialogOpen = false;
+            if (accepted && !key.empty() && SaveOpenCodeToken(key)) {
+                if (g_metricCfg.where[static_cast<int>(metrics::Id::OpenCodeUsage)] == metrics::Where::Hidden) {
+                    g_metricCfg.where[static_cast<int>(metrics::Id::OpenCodeUsage)] = metrics::Where::Bar;
+                    SaveMetricsWhere();
+                }
+                metrics::RequestAiRefresh();
+                UpdateWidget();
+                ApplyAllMetricTray();
+            }
+            if (!key.empty()) {
+                SecureZeroMemory(&key[0], key.size() * sizeof(wchar_t));
+                key.clear();
+            }
+            break;
+        }
+        case ID_OPENCODE_CLEAR:
+            ClearOpenCodeToken();
+            g_metricSnap.ai = metrics::AiUsage{};
+            g_metricSnap.ok[static_cast<int>(metrics::Id::OpenCodeUsage)] = false;
+            UpdateWidget();
+            ApplyAllMetricTray();
             break;
         case ID_TEMP_ALERTS:
             g_tempAlerts = !g_tempAlerts;
