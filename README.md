@@ -1,94 +1,100 @@
 # Monitor
 
-Wireless device battery levels and system metrics right on the Windows taskbar.
+**Las baterías de tus dispositivos inalámbricos y las métricas de tu PC, en una sola franja de la barra de tareas de Windows.** App nativa en C++/Win32, sin dependencias externas, pensada para uso personal y para compartir con unos pocos amigos.
 
-[![Star on GitHub](https://img.shields.io/github/stars/ignaciorevainera/monitor?style=flat&logo=github&label=Star)](https://github.com/ignaciorevainera/monitor)
-[![Report a device](https://img.shields.io/badge/Report-a%20device-2EA44F?logo=github&logoColor=white)](https://github.com/ignaciorevainera/monitor/issues/new)
+[![Star en GitHub](https://img.shields.io/github/stars/ignaciorevainera/monitor?style=flat&logo=github&label=Star)](https://github.com/ignaciorevainera/monitor)
+[![Reportar un dispositivo](https://img.shields.io/badge/Reportar-un%20dispositivo-2EA44F?logo=github&logoColor=white)](https://github.com/ignaciorevainera/monitor/issues/new)
 
-![Monitor on the taskbar](docs/screenshot.png)
+![Monitor en la barra de tareas](docs/screenshots/strip.png)
 
-## What Monitor shows
+## Qué muestra
 
-Monitor combines wireless peripheral battery tracking with real-time system telemetry in a single native C++/Win32 app:
+Monitor reúne en una sola ventana invisible sobre la taskbar dos tipos de información:
 
-- **Wireless device batteries:** mice, keyboards, headsets, game controllers, earbuds (Galaxy Buds, AirPods/Beats, Nothing/CMF, Google Fast Pair), Bluetooth devices, Phone Link phones, and [HeadsetControl](https://github.com/Sapd/HeadsetControl) headsets. Supports taskbar widget mode, tray-icon mode, brand colors, per-device low-battery alerts, custom device names, and local 30-day battery history.
-- **Nine system metrics:**
-  - **CPU usage** (`%`)
-  - **CPU temperature** (`°C`)
-  - **RAM usage** (`%`)
-  - **GPU usage** (`%`)
-  - **GPU temperature** (`°C`)
-  - **VRAM** (`%`)
-  - **SSD temperature** (`°C`)
-  - **Disk space** (free GB / free % / used %; reads the Windows system drive and refreshes every 60 s)
-  - **OpenCode Go usage** (5-hour / weekly / monthly; hidden by default until you set a personal API key from `https://opencode.ai/console/api`, stored encrypted with Windows DPAPI for your user account, and refreshed every 5 minutes; keys without an OpenCode Go subscription return 403, and Monitor never reads OpenCode's local session or Gemini)
+- **Baterías inalámbricas:** ratones, teclados, auriculares, mandos, earbuds (Galaxy Buds, AirPods/Beats, Nothing/CMF, Google Fast Pair), dispositivos Bluetooth y teléfonos de Phone Link, además de auriculares compatibles con [HeadsetControl](https://github.com/Sapd/HeadsetControl). Incluye nombres personalizados, colores de marca, alertas de batería baja e historial local de 30 días.
+- **Nueve métricas del sistema:** uso de CPU, temperatura de CPU, uso de RAM, uso de GPU, temperatura de GPU, VRAM, temperatura de SSD, espacio libre en disco y uso de OpenCode Go.
 
-OpenCode Go usage uses the official OpenCode logo, shown only for that metric.
+Cada métrica puede estar en la **barra de tareas**, en el **área de notificación** u **oculta**. El disco muestra GB libres, % libre o % usado (lee la unidad de Windows y se actualiza cada 60 s). OpenCode Go muestra `5 h / semanal / mensual` o **sólo el mensual con su `%`**, con color según el consumo que se puede activar o desactivar; usa el logo oficial de OpenCode y una clave API personal guardada cifrada con DPAPI (nunca lee la sesión local de OpenCode ni Gemini).
 
-Each metric can be placed on the **Taskbar**, in the **Notification area**, or **Hidden** via **System metrics** in the menu. You can also group temperatures with their usage metric, pick component label styles (**Icon**, **Word**, or **Both**), adjust refresh rate (1 s / 2 s / 5 s), and toggle **Temperature alerts** (on by default; rising-edge only, silent if a sensor is already hot at startup).
+Puedes agrupar las temperaturas con su métrica de uso, elegir etiqueta de componente (**Icono**, **Palabra** o **Ambos**), ajustar la frecuencia (1/2/5 s) y activar alertas de temperatura y de uso con umbral configurable. Las alertas se disparan al cruzar el umbral hacia arriba; la primera muestra caliente al arrancar no avisa.
 
-## Installation
+![Tooltip con todas las métricas](docs/screenshots/tooltip.png)
 
-Download from the [latest release](https://github.com/ignaciorevainera/monitor/releases/latest):
+## Menú y configuración
 
-- **Installer (`Monitor-Setup.exe`):** standard Windows installer; keeps settings, startup choice, and battery history across updates.
-- **Portable (`.zip`):** extract anywhere and run `Monitor.exe`.
+Clic derecho sobre el widget abre un menú agrupado por tareas: **Dispositivos**, **Apariencia**, **Métricas del sistema**, **Alertas**, **Idioma**, **Actualizar ahora**, **Abrir Administrador de tareas**, **Iniciar con Windows** y **Salir**. Clic izquierdo abre el Administrador de tareas.
 
-Monitor is plain C++/Win32 with no external runtime required.
+![Menú de opciones](docs/screenshots/menu.png)
 
-The binaries are not signed, so SmartScreen may warn the first time you run the installer: choose **More info → Run anyway**. To check a download, compare its SHA-256 against `SHA256SUMS.txt` in the same release.
+Cuando el taskbar se queda sin espacio, Monitor primero quita las palabras, luego reduce los espacios, después los glifos y por último oculta widgets completos, siempre con al menos un valor visible. Nunca aparece el botón de «…».
 
-## How CPU temperature works
+## Historial de batería
 
-`Monitor.exe` itself **never elevates** and always runs under your normal user account.
+Cada dispositivo tiene su propio historial de 30 días: gráfico, mínimo/máximo, cambio y una estimación conservadora de autonomía a partir de la descarga reciente. Datos y estimaciones se guardan sólo en tu equipo.
 
-To read the CPU die temperature sensor via **PawnIO**, choose **System metrics → Turn on CPU temperature...** in the menu:
+![Historial de batería](docs/screenshots/history.png)
 
-1. Monitor shows a one-time UAC administrator prompt.
-2. Approving it registers a scheduled task (`MonitorTempHelper`) that runs `Monitor.TempHelper.exe` at logon with elevated privileges.
-3. `Monitor.TempHelper.exe` loads the PawnIO sensor module and writes the CPU die temperature to a local temp file that `Monitor.exe` reads without admin rights.
+## Instalación
 
-Closing Monitor or hiding CPU temperature keeps the helper task installed so you are not prompted again.
+Descarga el instalador o el portable desde la [última release](https://github.com/ignaciorevainera/monitor/releases/latest):
 
-## Windows 11 tray overflow
+- **`Monitor-Setup.exe`:** instalador per-user; conserva ajustes, inicio automático e historial al actualizar. El upgrade es in-place, sin desinstalar.
+- **`Monitor-1.1.x-portable.zip`:** descomprime y ejecuta `Monitor.exe`.
 
-On Windows 11, newly created notification-area icons (such as system metrics set to **Notification area**) are placed in the hidden overflow flyout (`^`) by default. To keep an icon permanently visible on the taskbar, open the overflow flyout and drag the icon onto the taskbar, or enable it under **Settings → Personalization → Taskbar → Other system tray icons**.
+No hay firma Authenticode: SmartScreen puede avisar la primera vez (**Más información → Ejecutar de todos modos**). Verifica cualquier descarga contra el `SHA256SUMS.txt` de la release.
 
-## Coming from TraySense
+## Temperatura del núcleo de la CPU
 
-Monitor supersedes TraySense. If you previously used TraySense:
+`Monitor.exe` **nunca se eleva** y corre siempre con tu usuario normal. Para leer el sensor real del die de la CPU:
 
-1. **Retire TraySense:** delete its scheduled task in Task Scheduler and remove its folder from `Program Files`.
-2. **Automatic migration:** your existing TraySense settings are migrated to Monitor automatically on first run.
+1. Elige **Métricas del sistema → Activar temperatura de CPU...**.
+2. Aparece un único aviso de UAC: al aceptarlo se registra la tarea programada `MonitorTempHelper`, que ejecuta `Monitor.TempHelper.exe` con privilegios elevados al iniciar sesión.
+3. El helper escribe la temperatura en un archivo temporal local que Monitor lee sin admin.
 
-## Building from source
+Cerrar Monitor u ocultar la métrica no desinstala la tarea: no volverá a pedir permiso.
 
-Requires **MinGW-w64** (`g++` and `windres` on `PATH`) and PowerShell (used by `scripts/generate-version.ps1`):
+## Espacio en el área de notificación
 
-- **Batch script (Windows):**
-  ```bat
-  build.bat
-  ```
-  Produces `Monitor.exe` and `Monitor.TempHelper.exe`.
-- **Make (MSYS2 MINGW64):**
-  ```sh
-  make
-  make test
-  ```
+En Windows 11 los iconos nuevos del área de notificación aparecen dentro del desbordamiento (`^`). Para fijarlos, abre el desbordamiento y arrastra el icono a la barra, o actívalo en **Configuración → Personalización → Barra de tareas → Otros iconos del área del sistema**.
 
-### Diagnostic CLI options
+## Idiomas
 
-- `--metrics-dump`: prints a single snapshot of available system metrics to stdout and exits.
-- `--list` / `--dump`: lists detected wireless devices or full HID/driver diagnostics (for GitHub device-support reports).
-- `--demo`: runs with synthetic demo data (not saved).
-- `--quit`: signals a running `Monitor.exe` instance to exit cleanly.
+Integrados: **español e inglés**, con selección automática según el idioma de Windows. Puedes añadir el tuyo copiando un archivo de idioma a la carpeta `lang` junto a `Monitor.exe`.
 
-## License & Credits
+## Desde TraySense
 
-Monitor is licensed under the **[GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE)**.
+Monitor reemplaza a TraySense. Si vienes de él: elimina su tarea programada y su carpeta de `Program Files`; tus ajustes antiguos se migran automáticamente la primera vez.
 
-Monitor builds on and credits:
+## Compilar desde el código
 
-- **[Wireless-Device-Battery-Monitor (BatteryHub)](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor)** by **krisgfx9** — GPL-3.0 (combined under AGPL-3.0 §13)
-- **[TraySense](https://github.com/DMTWEAKS/TraySense)** by **DMTWEAKS** — AGPL-3.0 (system metrics reading)
-- **[PawnIO](https://github.com/namazso/PawnIO)** by **namazso** — LGPL-2.1 (sensor modules used by `Monitor.TempHelper.exe`)
+Necesitas **MinGW-w64** (`g++` y `windres` en el `PATH`) y PowerShell para `scripts/generate-version.ps1`:
+
+```bat
+build.bat 1.1.7 dev
+```
+
+Desde MSYS2 MINGW64:
+
+```sh
+make
+make test
+```
+
+### Opciones de diagnóstico
+
+- `--metrics-dump`: imprime una instantánea de las métricas disponibles y sale.
+- `--list` / `--dump`: lista los dispositivos detectados o volca todos los HID.
+- `--demo`: ejecuta con datos sintéticos (no se guardan).
+- `--quit`: pide a la instancia en marcha que sala limpiamente.
+- `--report`: abre el formulario para solicitar soporte de un dispositivo.
+
+## Licencia y créditos
+
+Monitor está bajo la **[GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE)** y se construye sobre:
+
+- **[Wireless-Device-Battery-Monitor (BatteryHub)](https://github.com/krisgfx9/Wireless-Device-Battery-Monitor)**, de **krisgfx9** — GPL-3.0 (combinado bajo AGPL-3.0 §13).
+- **[TraySense](https://github.com/DMTWEAKS/TraySense)**, de **DMTWEAKS** — AGPL-3.0 (lectura de métricas del sistema).
+- **[PawnIO](https://github.com/namazso/PawnIO)**, de **namazso** — LGPL-2.1 (módulos de sensores usados por el helper).
+- **[OpenCode](https://opencode.ai)**, de **Anomaly** — logotipo oficial de la marca usado sólo para identificar la métrica de uso de OpenCode Go; OpenCode es una marca de Anomaly y su uso no implica respaldo ni patrocinio.
+
+Los detalles completos están en `installer/THIRD_PARTY_NOTICES.txt`.
